@@ -327,6 +327,68 @@ stn_platform_status stn_platform_socket_receive_some(
     return STN_PLATFORM_OK;
 }
 
+stn_platform_status stn_platform_socket_readable(
+    stn_socket *socket,
+    int *readable
+)
+{
+    SOCKET native_socket;
+    fd_set read_set;
+    struct timeval timeout;
+    int result;
+
+    if (socket == NULL ||
+        readable == NULL) {
+        return STN_PLATFORM_INVALID_ARGUMENT;
+    }
+
+    native_socket =
+        stn_platform_socket_native(
+            socket
+        );
+
+    if (native_socket == INVALID_SOCKET) {
+        return STN_PLATFORM_INVALID_ARGUMENT;
+    }
+
+    *readable = 0;
+
+    FD_ZERO(
+        &read_set
+    );
+
+    FD_SET(
+        native_socket,
+        &read_set
+    );
+
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 0;
+
+    result = select(
+        0,
+        &read_set,
+        NULL,
+        NULL,
+        &timeout
+    );
+
+    if (result == SOCKET_ERROR) {
+        return STN_PLATFORM_RECEIVE_FAILED;
+    }
+
+    if (result > 0 &&
+        FD_ISSET(
+            native_socket,
+            &read_set
+        )) {
+
+        *readable = 1;
+    }
+
+    return STN_PLATFORM_OK;
+}
+
 void stn_platform_socket_close(
     stn_socket *socket
 )

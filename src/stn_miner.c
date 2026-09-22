@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "stn_cpu.h"
 #include "stn_display.h"
@@ -15,6 +16,58 @@
 
 #define STN_MINER_MAX_BLOCK_LENGTH 1051880u
 #define STN_MINER_RECONNECT_DELAY_MS 1000u
+
+#define STN_MINER_HASH_CHUNK 4096u
+#define STN_MINER_PROGRESS_INTERVAL_MS 1000u
+
+static uint64_t stn_miner_now_ms(void)
+{
+    struct timespec current;
+    uint64_t seconds;
+    uint64_t milliseconds;
+
+    if (timespec_get(
+            &current,
+            TIME_UTC
+        ) != TIME_UTC) {
+        return 0u;
+    }
+
+    if (current.tv_sec < 0) {
+        return 0u;
+    }
+
+    seconds =
+        (uint64_t) current.tv_sec;
+
+    if (seconds >
+        (UINT64_MAX / 1000u)) {
+        return UINT64_MAX;
+    }
+
+    milliseconds =
+        seconds * 1000u;
+
+    milliseconds +=
+        (uint64_t)
+        (current.tv_nsec / 1000000L);
+
+    return milliseconds;
+}
+
+static uint64_t stn_miner_elapsed_ms(
+    uint64_t start_ms,
+    uint64_t current_ms
+)
+{
+    if (start_ms == 0u ||
+        current_ms == 0u ||
+        current_ms < start_ms) {
+        return 0u;
+    }
+
+    return current_ms - start_ms;
+}
 
 static void stn_miner_job_clear(
     stn_miner_job *job
@@ -140,6 +193,118 @@ static stn_miner_status stn_miner_send_address(
     stn_log_write(
         "TX ADDRESS_OK"
     );
+
+    return STN_MINER_OK;
+}
+
+static stn_miner_status stn_miner_send_hash_progress(
+    stn_socket *socket,
+    const uint8_t work_id[STNM_WORK_ID_SIZE],
+    uint64_t hashes_completed,
+    uint64_t elapsed_ms
+)
+{
+    stn_miner_hash_progress progress;
+    uint8_t frame[STNM_HASH_PROGRESS_SIZE];
+
+    stn_protocol_status protocol_status;
+    stn_platform_status platform_status;
+
+    if (socket == NULL ||
+        work_id == NULL) {
+        return STN_MINER_INVALID_ARGUMENT;
+    }
+
+    if (elapsed_ms == 0u) {
+        return STN_MINER_OK;
+    }
+
+    memset(
+        &progress,
+        0,
+        sizeof(progress)
+    );
+
+    memcpy(
+        progress.work_id,
+        work_id,
+        STNM_WORK_ID_SIZE
+    );
+
+    progress.hashes_completed =
+        hashes_completed;
+
+    progress.elapsed_ms =
+        elapsed_ms;
+
+    protocol_status =
+        stn_protocol_build_hash_progress(
+            &progress,
+            frame
+        );
+
+    if (protocol_status != STN_PROTOCOL_OK) {
+        stn_log_write(
+            "TX HASH_PROGRESS_BUILD_FAILED protocol_status=%d",
+            (int) protocol_status
+        );
+
+        return STN_MINER_PROTOCOL_ERROR;
+    }
+
+    platform_status =
+        stn_platform_socket_send_all(
+            socket,
+            frame,
+            sizeof(frame)
+        );
+
+    if (platform_status != STN_PLATFORM_OK) {
+        stn_log_write(
+            "TX HASH_PROGRESS_FAILED platform_status=%d",
+            (int) platform_status
+        );
+
+        return STN_MINER_IO_FAILED;
+    }
+
+    stn_log_write(
+        "TX HASH_PROGRESS hashes=%llu elapsed_ms=%llu",
+        (unsigned long long)
+            hashes_completed,
+        (unsigned long long)
+            elapsed_ms
+    );
+
+    return STN_MINER_OK;
+}
+
+static stn_miner_status stn_miner_socket_readable(
+    stn_socket *socket,
+    int *readable
+)
+{
+    stn_platform_status platform_status;
+
+    if (socket == NULL ||
+        readable == NULL) {
+        return STN_MINER_INVALID_ARGUMENT;
+    }
+
+    platform_status =
+        stn_platform_socket_readable(
+            socket,
+            readable
+        );
+
+    if (platform_status != STN_PLATFORM_OK) {
+        stn_log_write(
+            "SOCKET_READABLE_FAILED platform_status=%d",
+            (int) platform_status
+        );
+
+        return STN_MINER_IO_FAILED;
+    }
 
     return STN_MINER_OK;
 }
@@ -630,7 +795,7 @@ stn_miner_status stn_miner_run(
         }
 
         stn_log_write(
-            "ADDRESS_REGISTERED address=%s",
+            "ADDRESS_SENT address=%s",
             config->address
         );
 
@@ -652,6 +817,11 @@ stn_miner_status stn_miner_run(
 
             uint64_t nonce_start;
             uint64_t hashes_completed;
+
+            uint64_t job_start_ms;
+            uint64_t last_progress_ms;
+
+            int replaced;
 
             memset(
                 &job,
@@ -729,28 +899,71 @@ stn_miner_status stn_miner_run(
             nonce_start =
                 job.initial_nonce;
 
-            hashes_completed = 0u;
+            hashes_completed =
+                0u;
+
+            job_start_ms =
+                stn_miner_now_ms();
+
+            last_progress_ms =
+                job_start_ms;
+
+            replaced = 0;
+
+            stn_log_write(
+                "MINING_BEGIN nonce_start=%llu chunk=%u",
+                (unsigned long long)
+                    nonce_start,
+                (unsigned int)
+                    STN_MINER_HASH_CHUNK
+            );
 
             for (;;) {
-                stn_log_write(
-                    "MINING_BEGIN nonce_start=%llu",
-                    (unsigned long long)
-                        nonce_start
-                );
+                uint64_t chunk_end;
+                uint64_t chunk_hashes;
+                uint64_t current_ms;
+                uint64_t elapsed_ms;
 
-                cpu_status =
-                    stn_cpu_search(
-                        &job,
-                        nonce_start,
-                        UINT64_MAX,
-                        &solution
+                int readable;
+
+                readable = 0;
+
+                status =
+                    stn_miner_socket_readable(
+                        &socket,
+                        &readable
                     );
 
-                if (cpu_status ==
-                    STN_CPU_NO_SOLUTION) {
+                if (status != STN_MINER_OK) {
+                    stn_display_set_status(
+                        &display,
+                        "Reconnecting"
+                    );
 
+                    stn_display_set_result(
+                        &display,
+                        "Stratum read failure"
+                    );
+
+                    stn_display_render(
+                        &display
+                    );
+
+                    stn_miner_job_clear(
+                        &job
+                    );
+
+                    goto reconnect;
+                }
+
+                if (readable) {
                     stn_log_write(
-                        "MINING_NONCE_SPACE_EXHAUSTED"
+                        "RX JOB_PENDING while_mining=1"
+                    );
+
+                    stn_display_set_result(
+                        &display,
+                        "Replaced"
                     );
 
                     stn_display_set_status(
@@ -758,16 +971,202 @@ stn_miner_status stn_miner_run(
                         "Waiting for job"
                     );
 
-                    stn_display_set_result(
-                        &display,
-                        "Nonce space exhausted"
-                    );
-
                     stn_display_render(
                         &display
                     );
 
+                    replaced = 1;
                     break;
+                }
+
+                if (nonce_start >
+                    UINT64_MAX -
+                    (STN_MINER_HASH_CHUNK - 1u)) {
+
+                    chunk_end =
+                        UINT64_MAX;
+                } else {
+                    chunk_end =
+                        nonce_start +
+                        (STN_MINER_HASH_CHUNK - 1u);
+                }
+
+                cpu_status =
+                    stn_cpu_search(
+                        &job,
+                        nonce_start,
+                        chunk_end,
+                        &solution
+                    );
+
+                if (cpu_status ==
+                    STN_CPU_NO_SOLUTION) {
+
+                    chunk_hashes =
+                        (chunk_end -
+                         nonce_start) + 1u;
+
+                    if (UINT64_MAX -
+                        hashes_completed <
+                        chunk_hashes) {
+
+                        hashes_completed =
+                            UINT64_MAX;
+                    } else {
+                        hashes_completed +=
+                            chunk_hashes;
+                    }
+
+                    stn_display_set_nonce(
+                        &display,
+                        chunk_end
+                    );
+
+                    stn_display_set_hashes(
+                        &display,
+                        hashes_completed
+                    );
+
+                    current_ms =
+                        stn_miner_now_ms();
+
+                    elapsed_ms =
+                        stn_miner_elapsed_ms(
+                            job_start_ms,
+                            current_ms
+                        );
+
+                    if (current_ms != 0u &&
+                        (last_progress_ms == 0u ||
+                         current_ms <
+                            last_progress_ms ||
+                         current_ms -
+                            last_progress_ms >=
+                            STN_MINER_PROGRESS_INTERVAL_MS)) {
+
+                        status =
+                            stn_miner_send_hash_progress(
+                                &socket,
+                                job.work_id,
+                                hashes_completed,
+                                elapsed_ms
+                            );
+
+                        if (status !=
+                            STN_MINER_OK) {
+
+                            stn_display_set_status(
+                                &display,
+                                "Reconnecting"
+                            );
+
+                            stn_display_set_result(
+                                &display,
+                                "Progress send failed"
+                            );
+
+                            stn_display_render(
+                                &display
+                            );
+
+                            stn_miner_job_clear(
+                                &job
+                            );
+
+                            goto reconnect;
+                        }
+
+                        last_progress_ms =
+                            current_ms;
+
+                        stn_display_render(
+                            &display
+                        );
+                    }
+
+                    readable = 0;
+
+                    status =
+                        stn_miner_socket_readable(
+                            &socket,
+                            &readable
+                        );
+
+                    if (status !=
+                        STN_MINER_OK) {
+
+                        stn_display_set_status(
+                            &display,
+                            "Reconnecting"
+                        );
+
+                        stn_display_set_result(
+                            &display,
+                            "Stratum read failure"
+                        );
+
+                        stn_display_render(
+                            &display
+                        );
+
+                        stn_miner_job_clear(
+                            &job
+                        );
+
+                        goto reconnect;
+                    }
+
+                    if (readable) {
+                        stn_log_write(
+                            "RX JOB_PENDING after_chunk=1"
+                        );
+
+                        stn_display_set_result(
+                            &display,
+                            "Replaced"
+                        );
+
+                        stn_display_set_status(
+                            &display,
+                            "Waiting for job"
+                        );
+
+                        stn_display_render(
+                            &display
+                        );
+
+                        replaced = 1;
+                        break;
+                    }
+
+                    if (chunk_end ==
+                        UINT64_MAX) {
+
+                        stn_log_write(
+                            "MINING_NONCE_SPACE_EXHAUSTED"
+                        );
+
+                        stn_display_set_status(
+                            &display,
+                            "Waiting for job"
+                        );
+
+                        stn_display_set_result(
+                            &display,
+                            "Nonce space exhausted"
+                        );
+
+                        stn_display_render(
+                            &display
+                        );
+
+                        break;
+                    }
+
+                    nonce_start =
+                        chunk_end + 1u;
+
+                    continue;
                 }
 
                 if (cpu_status !=
@@ -805,20 +1204,38 @@ stn_miner_status stn_miner_run(
                     return STN_MINER_ERROR;
                 }
 
-                if (solution.nonce >=
-                    nonce_start) {
+                chunk_hashes =
+                    (solution.nonce -
+                     nonce_start) + 1u;
 
+                if (UINT64_MAX -
+                    hashes_completed <
+                    chunk_hashes) {
+
+                    hashes_completed =
+                        UINT64_MAX;
+                } else {
                     hashes_completed +=
-                        (solution.nonce -
-                         nonce_start) + 1u;
+                        chunk_hashes;
                 }
 
+                current_ms =
+                    stn_miner_now_ms();
+
+                elapsed_ms =
+                    stn_miner_elapsed_ms(
+                        job_start_ms,
+                        current_ms
+                    );
+
                 stn_log_write(
-                    "SOLUTION nonce=%llu hashes_completed=%llu",
+                    "SOLUTION nonce=%llu hashes_completed=%llu elapsed_ms=%llu",
                     (unsigned long long)
                         solution.nonce,
                     (unsigned long long)
-                        hashes_completed
+                        hashes_completed,
+                    (unsigned long long)
+                        elapsed_ms
                 );
 
                 stn_display_set_nonce(
@@ -830,6 +1247,93 @@ stn_miner_status stn_miner_run(
                     &display,
                     hashes_completed
                 );
+
+                readable = 0;
+
+                status =
+                    stn_miner_socket_readable(
+                        &socket,
+                        &readable
+                    );
+
+                if (status !=
+                    STN_MINER_OK) {
+
+                    stn_display_set_status(
+                        &display,
+                        "Reconnecting"
+                    );
+
+                    stn_display_set_result(
+                        &display,
+                        "Stratum read failure"
+                    );
+
+                    stn_display_render(
+                        &display
+                    );
+
+                    stn_miner_job_clear(
+                        &job
+                    );
+
+                    goto reconnect;
+                }
+
+                if (readable) {
+                    stn_log_write(
+                        "RX JOB_PENDING before_submit=1"
+                    );
+
+                    stn_display_set_result(
+                        &display,
+                        "Replaced"
+                    );
+
+                    stn_display_set_status(
+                        &display,
+                        "Waiting for job"
+                    );
+
+                    stn_display_render(
+                        &display
+                    );
+
+                    replaced = 1;
+                    break;
+                }
+
+                status =
+                    stn_miner_send_hash_progress(
+                        &socket,
+                        job.work_id,
+                        hashes_completed,
+                        elapsed_ms
+                    );
+
+                if (status !=
+                    STN_MINER_OK) {
+
+                    stn_display_set_status(
+                        &display,
+                        "Reconnecting"
+                    );
+
+                    stn_display_set_result(
+                        &display,
+                        "Progress send failed"
+                    );
+
+                    stn_display_render(
+                        &display
+                    );
+
+                    stn_miner_job_clear(
+                        &job
+                    );
+
+                    goto reconnect;
+                }
 
                 stn_display_set_status(
                     &display,
@@ -1058,6 +1562,10 @@ stn_miner_status stn_miner_run(
             stn_miner_job_clear(
                 &job
             );
+
+            if (replaced) {
+                continue;
+            }
         }
 
 reconnect:

@@ -49,6 +49,11 @@ stn_platform_status stn_platform_socket_receive_some(
     size_t *received
 );
 
+stn_platform_status stn_platform_socket_readable(
+    stn_socket *socket,
+    int *readable
+);
+
 void stn_platform_socket_close(
     stn_socket *socket
 );
