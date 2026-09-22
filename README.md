@@ -722,6 +722,7 @@ For Chain architecture and consensus requirements, refer to the STN Chain whitep
 ## Documentation
 Our Development and Governance Documents
 - [CHANGELOG](/docs/CHANGELOG.md)
+- [CONTRIBUTING](/docs/CONTRIB.md)
 
 ## License
 
