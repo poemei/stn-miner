@@ -132,9 +132,10 @@ Operating-system-specific behavior belongs behind the platform abstraction.
 
 Current platform direction includes:
 
-    Windows
-    Linux
-    future STN Chain OS
+    - Windows
+    - Linux
+	- macOS
+    - future STN Chain OS
 
 Current architecture direction includes:
 
@@ -177,6 +178,7 @@ For example:
 
     platforms/windows/
     platforms/linux/
+	platforms/mackos/
 
 Platform implementations may provide services such as:
 
@@ -275,6 +277,13 @@ Windows development uses:
     build.cmd
 
 The current Windows compiler path uses Microsoft `cl`.
+
+### MacOS
+a MacOS miner needs to use:
+
+    build.pkg
+	
+The Chief Developer has no experience with MacOS, do if this is for you, Fork, build, test, create  pulle request with an in depth description.
 
 ### Linux
 
