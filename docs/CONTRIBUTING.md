@@ -283,7 +283,7 @@ a MacOS miner needs to use:
 
     build.pkg
 	
-The Chief Developer has no experience with MacOS, do if this is for you, Fork, build, test, create  pulle request with an in depth description.
+The Chief Developer has no experience with MacOS, so if this is for you, Fork, build, test, create  pull request with an in depth description.
 
 ### Linux
 
