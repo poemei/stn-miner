@@ -4,6 +4,8 @@ STN Miner is the mining client for STN Chain.
 
 It connects to STN-Stratum, receives canonical mining work, performs proof-of-work, reports mining progress, and submits valid solutions back through Stratum for independent validation by STN Chain.
 
+STN Miner is platform-agnostic by design. Currently qualified platform targets are Windows and Linux, with future STN Chain OS support planned. macOS is not currently supported because no qualification environment is available.
+
 The miner is designed around the same engineering doctrine as STN Chain:
 
 ```text
@@ -258,7 +260,8 @@ mine
 ## Mining Address
 
 Every miner session is associated with an STN Chain address.
- - Chain Address may be obtained at [STNC Address Page](https://stn-chain.org/address)
+ - Chain Address may be obtained at 
+     - [STNC Address Page](https://stn-chain.org/address)
 
 Example:
 
