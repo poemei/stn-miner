@@ -77,6 +77,7 @@ STN Chain remains responsible for:
 - accepting or rejecting submitted work.
 
 A miner, Stratum server, peer, or application never becomes consensus authority merely because it supplied data.
+[STNC - The STN Chain](https://stn-chain.org)
 
 ---
 
@@ -257,6 +258,7 @@ mine
 ## Mining Address
 
 Every miner session is associated with an STN Chain address.
+ - Chain Address may be obtained at [STNC Address Page](https://stn-chain.org/address)
 
 Example:
 
@@ -713,6 +715,10 @@ It does not define what the Chain accepts.
 For Chain architecture and consensus requirements, refer to the STN Chain whitepaper.
 
 ---
+
+## Documentation
+Our Development and Governance Documents
+- [CHANGELOG](/docs/CHANGELOG.md)
 
 ## License
 
