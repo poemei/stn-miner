@@ -26,6 +26,8 @@ typedef struct stn_compute_provider {
     int api_ready;
     int platform_ready;
     size_t platform_count;
+    int device_query_ready;
+    size_t device_count;
 } stn_compute_provider;
 
 typedef struct stn_compute_inventory {
