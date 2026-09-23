@@ -22,6 +22,8 @@ stn_compute_status stn_compute_platform_detect(
         "test-opencl";
 
     inventory->providers[0].api_ready = 1;
+    inventory->providers[0].platform_ready = 1;
+    inventory->providers[0].platform_count = 2u;
 
     inventory->providers[1].type =
         STN_COMPUTE_PROVIDER_VULKAN;
@@ -30,6 +32,8 @@ stn_compute_status stn_compute_platform_detect(
         "test-vulkan";
 
     inventory->providers[1].api_ready = 0;
+    inventory->providers[1].platform_ready = 0;
+    inventory->providers[1].platform_count = 0u;
 
     return STN_COMPUTE_OK;
 }
@@ -93,6 +97,16 @@ int main(void)
     check(
         inventory.providers[1].api_ready == 0,
         "unready provider preserved"
+    );
+
+    check(
+        inventory.providers[0].platform_ready == 1,
+        "OpenCL platform readiness preserved"
+    );
+
+    check(
+        inventory.providers[0].platform_count == 2u,
+        "OpenCL platform count preserved"
     );
 
     check(
