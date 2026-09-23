@@ -12,7 +12,7 @@
 #define STN_OPENCL_TRUE 1u
 #define STN_GPU_BACKEND_HEADER_SIZE 168u
 #define STN_GPU_BACKEND_TARGET_SIZE 32u
-#define STN_GPU_BACKEND_MAX_CHUNK 65536u
+#define STN_GPU_BACKEND_MAX_CHUNK 4096u
 
 typedef int (__stdcall *stn_cl_get_platform_ids_fn)(
     unsigned int,
@@ -152,7 +152,6 @@ typedef struct stn_gpu_backend_state {
     void *header_buffer;
     void *target_buffer;
     void *match_buffer;
-    void *midstate_buffer;
     uint8_t job_work_id[STNM_WORK_ID_SIZE];
     int job_loaded;
 
@@ -452,28 +451,13 @@ stn_gpu_backend_status stn_gpu_backend_platform_prepare(
         state.create_buffer(
             state.context,
             STN_OPENCL_MEM_READ_WRITE,
-            STN_GPU_BACKEND_MAX_CHUNK,
+            STN_GPU_BACKEND_MAX_CHUNK *
+                sizeof(uint32_t),
             NULL,
             &result
         );
 
     if (state.match_buffer == NULL ||
-        result != 0) {
-        return STN_GPU_BACKEND_ERROR;
-    }
-
-    result = 0;
-
-    state.midstate_buffer =
-        state.create_buffer(
-            state.context,
-            STN_OPENCL_MEM_READ_WRITE,
-            32u,
-            NULL,
-            &result
-        );
-
-    if (state.midstate_buffer == NULL ||
         result != 0) {
         return STN_GPU_BACKEND_ERROR;
     }
@@ -505,21 +489,9 @@ stn_gpu_backend_status stn_gpu_backend_platform_prepare(
     result =
         state.set_kernel_arg(
             state.kernel,
-            3u,
+            4u,
             sizeof(state.match_buffer),
             &state.match_buffer
-        );
-
-    if (result != 0) {
-        return STN_GPU_BACKEND_ERROR;
-    }
-
-    result =
-        state.set_kernel_arg(
-            state.kernel,
-            4u,
-            sizeof(state.midstate_buffer),
-            &state.midstate_buffer
         );
 
     if (result != 0) {
@@ -532,13 +504,12 @@ stn_gpu_backend_status stn_gpu_backend_platform_prepare(
 
 stn_gpu_backend_status stn_gpu_backend_platform_search(
     const stn_miner_job *job,
-    const uint8_t midstate[32],
     uint64_t nonce_start,
     uint64_t nonce_end,
     stn_miner_solution *solution
 )
 {
-    unsigned char matches[STN_GPU_BACKEND_MAX_CHUNK];
+    uint32_t matches[STN_GPU_BACKEND_MAX_CHUNK];
     uint64_t count64;
     size_t count;
     size_t i;
@@ -549,7 +520,6 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
     }
 
     if (job == NULL ||
-        midstate == NULL ||
         solution == NULL ||
         job->block == NULL ||
         job->block_length < STN_GPU_BACKEND_HEADER_SIZE ||
@@ -609,23 +579,6 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
             return STN_GPU_BACKEND_ERROR;
         }
 
-        result =
-            state.enqueue_write(
-                state.queue,
-                state.midstate_buffer,
-                STN_OPENCL_TRUE,
-                0u,
-                32u,
-                midstate,
-                0u,
-                NULL,
-                NULL
-            );
-
-        if (result != 0) {
-            return STN_GPU_BACKEND_ERROR;
-        }
-
         memcpy(
             state.job_work_id,
             job->work_id,
@@ -641,6 +594,18 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
             2u,
             sizeof(nonce_start),
             &nonce_start
+        );
+
+    if (result != 0) {
+        return STN_GPU_BACKEND_ERROR;
+    }
+
+    result =
+        state.set_kernel_arg(
+            state.kernel,
+            3u,
+            sizeof(count64),
+            &count64
         );
 
     if (result != 0) {
@@ -664,10 +629,19 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
         return STN_GPU_BACKEND_ERROR;
     }
 
+    result =
+        state.finish(
+            state.queue
+        );
+
+    if (result != 0) {
+        return STN_GPU_BACKEND_ERROR;
+    }
+
     memset(
         matches,
         0,
-        count
+        count * sizeof(matches[0])
     );
 
     result =
@@ -676,7 +650,7 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
             state.match_buffer,
             STN_OPENCL_TRUE,
             0u,
-            count,
+            count * sizeof(matches[0]),
             matches,
             0u,
             NULL,
