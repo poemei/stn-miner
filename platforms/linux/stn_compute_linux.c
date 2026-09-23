@@ -203,6 +203,13 @@ typedef int (*stn_opencl_release_kernel_fn)(
     void *
 );
 
+typedef int (*stn_opencl_set_kernel_arg_fn)(
+    void *,
+    unsigned int,
+    size_t,
+    const void *
+);
+
 #define STN_OPENCL_DEVICE_TYPE_GPU (1ull << 2)
 #define STN_OPENCL_DEVICE_NOT_FOUND (-1)
 #define STN_OPENCL_MAX_PLATFORMS 16u
@@ -1855,6 +1862,316 @@ static void stn_compute_linux_qualify_opencl_kernel(
     provider->kernel_ready = 1;
 }
 
+static void stn_compute_linux_qualify_opencl_argument(
+    void * module,
+    stn_compute_provider *provider
+)
+{
+    static const char source_text[] =
+        "__kernel void stn_qualify(__global uchar *data) { (void)data; }";
+
+    const char *source;
+
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    stn_opencl_get_device_ids_fn get_device_ids;
+    stn_opencl_create_context_fn create_context;
+    stn_opencl_release_context_fn release_context;
+    stn_opencl_create_program_with_source_fn create_program;
+    stn_opencl_release_program_fn release_program;
+    stn_opencl_build_program_fn build_program;
+    stn_opencl_create_kernel_fn create_kernel;
+    stn_opencl_release_kernel_fn release_kernel;
+    stn_opencl_create_buffer_fn create_buffer;
+    stn_opencl_release_mem_object_fn release_mem_object;
+    stn_opencl_set_kernel_arg_fn set_kernel_arg;
+    void *platforms[STN_OPENCL_MAX_PLATFORMS];
+    void *device;
+    void *context;
+    void *program;
+    void *kernel;
+    void *buffer;
+    unsigned int platform_count;
+    unsigned int i;
+    int result;
+    int build_result;
+    int argument_result;
+    int buffer_release_result;
+    int kernel_release_result;
+    int program_release_result;
+    int context_release_result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->kernel_ready ||
+        provider->platform_count == 0u ||
+        provider->platform_count >
+            STN_OPENCL_MAX_PLATFORMS) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        dlsym(module, "clGetPlatformIDs");
+
+    get_device_ids =
+        (stn_opencl_get_device_ids_fn)
+        dlsym(module, "clGetDeviceIDs");
+
+    create_context =
+        (stn_opencl_create_context_fn)
+        dlsym(module, "clCreateContext");
+
+    release_context =
+        (stn_opencl_release_context_fn)
+        dlsym(module, "clReleaseContext");
+
+    create_program =
+        (stn_opencl_create_program_with_source_fn)
+        dlsym(module, "clCreateProgramWithSource");
+
+    release_program =
+        (stn_opencl_release_program_fn)
+        dlsym(module, "clReleaseProgram");
+
+    build_program =
+        (stn_opencl_build_program_fn)
+        dlsym(module, "clBuildProgram");
+
+    create_kernel =
+        (stn_opencl_create_kernel_fn)
+        dlsym(module, "clCreateKernel");
+
+    release_kernel =
+        (stn_opencl_release_kernel_fn)
+        dlsym(module, "clReleaseKernel");
+
+    create_buffer =
+        (stn_opencl_create_buffer_fn)
+        dlsym(module, "clCreateBuffer");
+
+    release_mem_object =
+        (stn_opencl_release_mem_object_fn)
+        dlsym(module, "clReleaseMemObject");
+
+    set_kernel_arg =
+        (stn_opencl_set_kernel_arg_fn)
+        dlsym(module, "clSetKernelArg");
+
+    if (get_platform_ids == NULL ||
+        get_device_ids == NULL ||
+        create_context == NULL ||
+        release_context == NULL ||
+        create_program == NULL ||
+        release_program == NULL ||
+        build_program == NULL ||
+        create_kernel == NULL ||
+        release_kernel == NULL ||
+        create_buffer == NULL ||
+        release_mem_object == NULL ||
+        set_kernel_arg == NULL) {
+        return;
+    }
+
+    platform_count =
+        (unsigned int)
+        provider->platform_count;
+
+    result =
+        get_platform_ids(
+            platform_count,
+            platforms,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    device = NULL;
+
+    for (i = 0u;
+         i < platform_count;
+         ++i) {
+
+        result =
+            get_device_ids(
+                platforms[i],
+                STN_OPENCL_DEVICE_TYPE_GPU,
+                1u,
+                &device,
+                NULL
+            );
+
+        if (result ==
+            STN_OPENCL_DEVICE_NOT_FOUND) {
+            continue;
+        }
+
+        if (result != 0 ||
+            device == NULL) {
+            return;
+        }
+
+        break;
+    }
+
+    if (device == NULL) {
+        return;
+    }
+
+    result = 0;
+
+    context =
+        create_context(
+            NULL,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            &result
+        );
+
+    if (context == NULL ||
+        result != 0) {
+        return;
+    }
+
+    source = source_text;
+    result = 0;
+
+    program =
+        create_program(
+            context,
+            1u,
+            &source,
+            NULL,
+            &result
+        );
+
+    if (program == NULL ||
+        result != 0) {
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    build_result =
+        build_program(
+            program,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            NULL
+        );
+
+    if (build_result != 0) {
+
+        (void) release_program(
+            program
+        );
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    result = 0;
+
+    kernel =
+        create_kernel(
+            program,
+            "stn_qualify",
+            &result
+        );
+
+    if (kernel == NULL ||
+        result != 0) {
+
+        (void) release_program(
+            program
+        );
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    result = 0;
+
+    buffer =
+        create_buffer(
+            context,
+            STN_OPENCL_MEM_READ_WRITE,
+            STN_OPENCL_QUALIFY_BUFFER_SIZE,
+            NULL,
+            &result
+        );
+
+    if (buffer == NULL ||
+        result != 0) {
+
+        (void) release_kernel(
+            kernel
+        );
+
+        (void) release_program(
+            program
+        );
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    argument_result =
+        set_kernel_arg(
+            kernel,
+            0u,
+            sizeof(buffer),
+            &buffer
+        );
+
+    buffer_release_result =
+        release_mem_object(
+            buffer
+        );
+
+    kernel_release_result =
+        release_kernel(
+            kernel
+        );
+
+    program_release_result =
+        release_program(
+            program
+        );
+
+    context_release_result =
+        release_context(
+            context
+        );
+
+    if (argument_result != 0 ||
+        buffer_release_result != 0 ||
+        kernel_release_result != 0 ||
+        program_release_result != 0 ||
+        context_release_result != 0) {
+        return;
+    }
+
+    provider->argument_ready = 1;
+}
+
 static void stn_compute_linux_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -1907,6 +2224,7 @@ static void stn_compute_linux_probe(
     provider->program_ready = 0;
     provider->build_ready = 0;
     provider->kernel_ready = 0;
+    provider->argument_ready = 0;
 
     if (type ==
         STN_COMPUTE_PROVIDER_OPENCL) {
@@ -1956,6 +2274,11 @@ static void stn_compute_linux_probe(
         );
 
         stn_compute_linux_qualify_opencl_kernel(
+            module,
+            provider
+        );
+
+        stn_compute_linux_qualify_opencl_argument(
             module,
             provider
         );
