@@ -82,6 +82,58 @@ static int stn_compute_linux_api_ready(
     }
 }
 
+typedef int (*stn_opencl_get_platform_ids_fn)(
+    unsigned int,
+    void **,
+    unsigned int *
+);
+
+static void stn_compute_linux_qualify_opencl_platforms(
+    void *module,
+    stn_compute_provider *provider
+)
+{
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    unsigned int platform_count;
+    int result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->api_ready) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        dlsym(
+            module,
+            "clGetPlatformIDs"
+        );
+
+    if (get_platform_ids == NULL) {
+        return;
+    }
+
+    platform_count = 0u;
+
+    result =
+        get_platform_ids(
+            0u,
+            NULL,
+            &platform_count
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    provider->platform_count =
+        (size_t) platform_count;
+
+    provider->platform_ready =
+        platform_count > 0u ? 1 : 0;
+}
+
 static void stn_compute_linux_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -119,6 +171,17 @@ static void stn_compute_linux_probe(
             module,
             type
         );
+
+    provider->platform_ready = 0;
+    provider->platform_count = 0u;
+
+    if (type ==
+        STN_COMPUTE_PROVIDER_OPENCL) {
+        stn_compute_linux_qualify_opencl_platforms(
+            module,
+            provider
+        );
+    }
 
     inventory->count++;
 
