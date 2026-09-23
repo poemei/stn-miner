@@ -140,29 +140,30 @@ static void stn_miner_log_work_id(
 }
 
 static void stn_miner_detect_gpu(
-    stn_display_state *display
+    stn_display_state *display,
+    stn_gpu_inventory *inventory
 )
 {
-    stn_gpu_inventory inventory;
     stn_gpu_status gpu_status;
 
     char gpu_text[STN_DISPLAY_GPU_TEXT_SIZE];
 
     size_t i;
 
-    if (display == NULL) {
+    if (display == NULL ||
+        inventory == NULL) {
         return;
     }
 
     memset(
-        &inventory,
+        inventory,
         0,
-        sizeof(inventory)
+        sizeof(*inventory)
     );
 
     gpu_status =
         stn_gpu_detect(
-            &inventory
+            inventory
         );
 
     if (gpu_status ==
@@ -196,7 +197,7 @@ static void stn_miner_detect_gpu(
         return;
     }
 
-    if (inventory.count == 0u) {
+    if (inventory->count == 0u) {
         stn_log_write(
             "GPU_DETECT none"
         );
@@ -212,39 +213,39 @@ static void stn_miner_detect_gpu(
     stn_log_write(
         "GPU_DETECT count=%u",
         (unsigned int)
-            inventory.count
+            inventory->count
     );
 
     for (i = 0u;
-         i < inventory.count;
+         i < inventory->count;
          ++i) {
 
         stn_log_write(
             "GPU_DEVICE index=%u vendor=%s name=%s",
             (unsigned int)
-                inventory.devices[i].device_index,
+                inventory->devices[i].device_index,
             stn_gpu_vendor_name(
-                inventory.devices[i].vendor
+                inventory->devices[i].vendor
             ),
-            inventory.devices[i].name
+            inventory->devices[i].name
         );
     }
 
-    if (inventory.count == 1u) {
+    if (inventory->count == 1u) {
         (void) snprintf(
             gpu_text,
             sizeof(gpu_text),
             "%s",
-            inventory.devices[0].name
+            inventory->devices[0].name
         );
     } else {
         (void) snprintf(
             gpu_text,
             sizeof(gpu_text),
             "%s (+%u more)",
-            inventory.devices[0].name,
+            inventory->devices[0].name,
             (unsigned int)
-                (inventory.count - 1u)
+                (inventory->count - 1u)
         );
     }
 
@@ -757,6 +758,8 @@ stn_miner_status stn_miner_run(
     stn_platform_status platform_status;
     stn_backend backend;
     stn_backend_status backend_status;
+    stn_backend_type candidate_type;
+    stn_gpu_inventory gpu_inventory;
     stn_display_state display;
 
     if (config == NULL ||
@@ -814,7 +817,21 @@ stn_miner_status stn_miner_run(
     );
 
     stn_miner_detect_gpu(
-        &display
+        &display,
+        &gpu_inventory
+    );
+
+    candidate_type =
+        stn_backend_candidate_type(
+            &gpu_inventory
+        );
+
+    stn_log_write(
+        "BACKEND_CANDIDATE preferred=%s active=%s",
+        stn_backend_type_name(
+            candidate_type
+        ),
+        backend.name
     );
 
     stn_display_set_status(
