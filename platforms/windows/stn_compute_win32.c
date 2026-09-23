@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "stn_compute.h"
 #include "stn_compute_platform.h"
@@ -33,6 +34,7 @@ static int stn_compute_win32_api_ready(
                 stn_compute_win32_has_symbol(module, "clGetDeviceIDs") &&
                 stn_compute_win32_has_symbol(module, "clGetDeviceInfo") &&
                 stn_compute_win32_has_symbol(module, "clCreateContext") &&
+                stn_compute_win32_has_symbol(module, "clReleaseContext") &&
                 stn_compute_win32_has_symbol(module, "clCreateCommandQueue") &&
                 stn_compute_win32_has_symbol(module, "clCreateProgramWithSource") &&
                 stn_compute_win32_has_symbol(module, "clBuildProgram") &&
@@ -107,6 +109,19 @@ typedef int (__stdcall *stn_opencl_get_device_info_fn)(
     size_t,
     void *,
     size_t *
+);
+
+typedef void *(__stdcall *stn_opencl_create_context_fn)(
+    const intptr_t *,
+    unsigned int,
+    void * const *,
+    void *,
+    void *,
+    int *
+);
+
+typedef int (__stdcall *stn_opencl_release_context_fn)(
+    void *
 );
 
 #define STN_OPENCL_DEVICE_TYPE_GPU (1ull << 2)
@@ -375,6 +390,131 @@ static void stn_compute_win32_qualify_opencl_identity(
     provider->device_identity_ready = 1;
 }
 
+static void stn_compute_win32_qualify_opencl_context(
+    HMODULE module,
+    stn_compute_provider *provider
+)
+{
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    stn_opencl_get_device_ids_fn get_device_ids;
+    stn_opencl_create_context_fn create_context;
+    stn_opencl_release_context_fn release_context;
+    void *platforms[STN_OPENCL_MAX_PLATFORMS];
+    void *device;
+    void *context;
+    unsigned int platform_count;
+    unsigned int i;
+    int result;
+    int release_result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->device_identity_ready ||
+        provider->platform_count == 0u ||
+        provider->platform_count >
+            STN_OPENCL_MAX_PLATFORMS) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        GetProcAddress(module, "clGetPlatformIDs");
+
+    get_device_ids =
+        (stn_opencl_get_device_ids_fn)
+        GetProcAddress(module, "clGetDeviceIDs");
+
+    create_context =
+        (stn_opencl_create_context_fn)
+        GetProcAddress(module, "clCreateContext");
+
+    release_context =
+        (stn_opencl_release_context_fn)
+        GetProcAddress(module, "clReleaseContext");
+
+    if (get_platform_ids == NULL ||
+        get_device_ids == NULL ||
+        create_context == NULL ||
+        release_context == NULL) {
+        return;
+    }
+
+    platform_count =
+        (unsigned int)
+        provider->platform_count;
+
+    result =
+        get_platform_ids(
+            platform_count,
+            platforms,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    device = NULL;
+
+    for (i = 0u;
+         i < platform_count;
+         ++i) {
+
+        result =
+            get_device_ids(
+                platforms[i],
+                STN_OPENCL_DEVICE_TYPE_GPU,
+                1u,
+                &device,
+                NULL
+            );
+
+        if (result ==
+            STN_OPENCL_DEVICE_NOT_FOUND) {
+            continue;
+        }
+
+        if (result != 0 ||
+            device == NULL) {
+            return;
+        }
+
+        break;
+    }
+
+    if (device == NULL) {
+        return;
+    }
+
+    result = 0;
+
+    context =
+        create_context(
+            NULL,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            &result
+        );
+
+    if (context == NULL ||
+        result != 0) {
+        return;
+    }
+
+    release_result =
+        release_context(
+            context
+        );
+
+    if (release_result != 0) {
+        return;
+    }
+
+    provider->context_ready = 1;
+}
+
 static void stn_compute_win32_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -419,6 +559,7 @@ static void stn_compute_win32_probe(
     provider->device_identity_ready = 0;
     provider->device_name[0] = '\0';
     provider->device_vendor[0] = '\0';
+    provider->context_ready = 0;
 
     if (type ==
         STN_COMPUTE_PROVIDER_OPENCL) {
@@ -433,6 +574,11 @@ static void stn_compute_win32_probe(
         );
 
         stn_compute_win32_qualify_opencl_identity(
+            module,
+            provider
+        );
+
+        stn_compute_win32_qualify_opencl_context(
             module,
             provider
         );
