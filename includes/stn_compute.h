@@ -40,6 +40,7 @@ typedef struct stn_compute_provider {
     int build_ready;
     int kernel_ready;
     int argument_ready;
+    int execution_ready;
 } stn_compute_provider;
 
 typedef struct stn_compute_inventory {
