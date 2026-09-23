@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #define STN_COMPUTE_MAX_PROVIDERS 8u
+#define STN_COMPUTE_DEVICE_TEXT_MAX 128u
 
 typedef enum stn_compute_status {
     STN_COMPUTE_OK = 0,
@@ -28,6 +29,9 @@ typedef struct stn_compute_provider {
     size_t platform_count;
     int device_query_ready;
     size_t device_count;
+    int device_identity_ready;
+    char device_name[STN_COMPUTE_DEVICE_TEXT_MAX];
+    char device_vendor[STN_COMPUTE_DEVICE_TEXT_MAX];
 } stn_compute_provider;
 
 typedef struct stn_compute_inventory {
