@@ -33,6 +33,7 @@ typedef struct stn_compute_provider {
     char device_name[STN_COMPUTE_DEVICE_TEXT_MAX];
     char device_vendor[STN_COMPUTE_DEVICE_TEXT_MAX];
     int context_ready;
+    int queue_ready;
 } stn_compute_provider;
 
 typedef struct stn_compute_inventory {
