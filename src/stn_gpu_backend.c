@@ -7,7 +7,7 @@
 #include "stn_hash.h"
 #include "stn_protocol.h"
 
-#define STN_GPU_BACKEND_MAX_CHUNK 4096u
+#define STN_GPU_BACKEND_MAX_CHUNK 65536u
 
 static const uint8_t stn_gpu_block_id_domain[] =
     "STN-CHAIN:BLOCK:ID:1";
@@ -41,7 +41,7 @@ static const char stn_gpu_opencl_source[] =
     "__global uchar *matches){"
     "size_t gid=get_global_id(0);"
     "ulong nonce=nonce_start+(ulong)gid;"
-    "uchar m[256];uchar dg[32];uint w[64];uint s[8];uint i,j;"
+    "uchar m[256];uint w[64];uint s[8];uint i,j;"
     "for(i=0u;i<21u;i++)m[i]=dom[i];"
     "for(i=0u;i<168u;i++)m[21u+i]=header[i];"
     "m[173]=(uchar)(nonce>>56);m[174]=(uchar)(nonce>>48);"
@@ -77,15 +77,13 @@ static const char stn_gpu_opencl_source[] =
     "h=g;g=f;f=e;e=d+t1;d=c;c=b;b=a;a=t1+t2;}"
     "s[0]+=a;s[1]+=b;s[2]+=c;s[3]+=d;"
     "s[4]+=e;s[5]+=f;s[6]+=g;s[7]+=h;}"
-    "for(i=0u;i<8u;i++){uint v=s[i];"
-    "dg[i*4u]=(uchar)(v>>24);"
-    "dg[i*4u+1u]=(uchar)(v>>16);"
-    "dg[i*4u+2u]=(uchar)(v>>8);"
-    "dg[i*4u+3u]=(uchar)v;}"
     "matches[gid]=1;"
-    "for(i=0u;i<32u;i++){"
-    "if(dg[i]<target[i])break;"
-    "if(dg[i]>target[i]){matches[gid]=0;break;}}"
+    "for(i=0u;i<8u;i++){"
+    "uint q=i*4u;"
+    "uint tv=((uint)target[q]<<24)|((uint)target[q+1]<<16)|"
+    "((uint)target[q+2]<<8)|(uint)target[q+3];"
+    "if(s[i]<tv)break;"
+    "if(s[i]>tv){matches[gid]=0;break;}}"
     "}";
 
 static int stn_gpu_backend_verify(
