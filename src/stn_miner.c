@@ -20,7 +20,8 @@
 #define STN_MINER_MAX_BLOCK_LENGTH 1051880u
 #define STN_MINER_RECONNECT_DELAY_MS 1000u
 
-#define STN_MINER_HASH_CHUNK 4096u
+#define STN_MINER_CPU_HASH_CHUNK 4096u
+#define STN_MINER_GPU_HASH_CHUNK 65536u
 #define STN_MINER_PROGRESS_INTERVAL_MS 1000u
 
 static uint64_t stn_miner_now_ms(void)
@@ -1158,15 +1159,19 @@ stn_miner_status stn_miner_run(
             replaced = 0;
 
             stn_log_write(
-                "MINING_BEGIN nonce_start=%llu chunk=%u",
+                "MINING_BEGIN backend=%s nonce_start=%llu chunk=%u",
+                backend.name,
                 (unsigned long long)
                     nonce_start,
                 (unsigned int)
-                    STN_MINER_HASH_CHUNK
+                    (backend.type == STN_BACKEND_TYPE_GPU
+                        ? STN_MINER_GPU_HASH_CHUNK
+                        : STN_MINER_CPU_HASH_CHUNK)
             );
 
             for (;;) {
                 uint64_t chunk_end;
+                uint64_t hash_chunk;
                 uint64_t chunk_hashes;
                 uint64_t current_ms;
                 uint64_t elapsed_ms;
@@ -1226,16 +1231,21 @@ stn_miner_status stn_miner_run(
                     break;
                 }
 
+                hash_chunk =
+                    backend.type == STN_BACKEND_TYPE_GPU
+                        ? STN_MINER_GPU_HASH_CHUNK
+                        : STN_MINER_CPU_HASH_CHUNK;
+
                 if (nonce_start >
                     UINT64_MAX -
-                    (STN_MINER_HASH_CHUNK - 1u)) {
+                    (hash_chunk - 1u)) {
 
                     chunk_end =
                         UINT64_MAX;
                 } else {
                     chunk_end =
                         nonce_start +
-                        (STN_MINER_HASH_CHUNK - 1u);
+                        (hash_chunk - 1u);
                 }
 
                 backend_status =
