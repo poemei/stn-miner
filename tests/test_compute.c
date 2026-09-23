@@ -43,6 +43,7 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[0].build_ready = 1;
     inventory->providers[0].kernel_ready = 1;
     inventory->providers[0].argument_ready = 1;
+    inventory->providers[0].execution_ready = 1;
 
     inventory->providers[1].type =
         STN_COMPUTE_PROVIDER_VULKAN;
@@ -66,6 +67,7 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[1].build_ready = 0;
     inventory->providers[1].kernel_ready = 0;
     inventory->providers[1].argument_ready = 0;
+    inventory->providers[1].execution_ready = 0;
 
     return STN_COMPUTE_OK;
 }
@@ -210,6 +212,11 @@ int main(void)
     check(
         inventory.providers[0].argument_ready == 1,
         "OpenCL kernel argument readiness preserved"
+    );
+
+    check(
+        inventory.providers[0].execution_ready == 1,
+        "OpenCL execution readiness preserved"
     );
 
     check(
