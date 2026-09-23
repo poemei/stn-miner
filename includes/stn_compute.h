@@ -23,6 +23,7 @@ typedef enum stn_compute_provider_type {
 typedef struct stn_compute_provider {
     stn_compute_provider_type type;
     const char *runtime;
+    int api_ready;
 } stn_compute_provider;
 
 typedef struct stn_compute_inventory {
