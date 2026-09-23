@@ -46,6 +46,7 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[0].execution_ready = 1;
     inventory->providers[0].result_ready = 1;
     inventory->providers[0].vector_ready = 1;
+    inventory->providers[0].sha256_ready = 1;
 
     inventory->providers[1].type =
         STN_COMPUTE_PROVIDER_VULKAN;
@@ -72,6 +73,7 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[1].execution_ready = 0;
     inventory->providers[1].result_ready = 0;
     inventory->providers[1].vector_ready = 0;
+    inventory->providers[1].sha256_ready = 0;
 
     return STN_COMPUTE_OK;
 }
@@ -231,6 +233,11 @@ int main(void)
     check(
         inventory.providers[0].vector_ready == 1,
         "OpenCL arithmetic vector readiness preserved"
+    );
+
+    check(
+        inventory.providers[0].sha256_ready == 1,
+        "OpenCL STN SHA-256 readiness preserved"
     );
 
     check(
