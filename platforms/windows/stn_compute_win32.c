@@ -5,6 +5,88 @@
 #include "stn_compute.h"
 #include "stn_compute_platform.h"
 
+static int stn_compute_win32_has_symbol(
+    HMODULE module,
+    const char *name
+)
+{
+    if (module == NULL ||
+        name == NULL) {
+        return 0;
+    }
+
+    return GetProcAddress(
+        module,
+        name
+    ) != NULL;
+}
+
+static int stn_compute_win32_api_ready(
+    HMODULE module,
+    stn_compute_provider_type type
+)
+{
+    switch (type) {
+        case STN_COMPUTE_PROVIDER_OPENCL:
+            return
+                stn_compute_win32_has_symbol(module, "clGetPlatformIDs") &&
+                stn_compute_win32_has_symbol(module, "clGetDeviceIDs") &&
+                stn_compute_win32_has_symbol(module, "clGetDeviceInfo") &&
+                stn_compute_win32_has_symbol(module, "clCreateContext") &&
+                stn_compute_win32_has_symbol(module, "clCreateCommandQueue") &&
+                stn_compute_win32_has_symbol(module, "clCreateProgramWithSource") &&
+                stn_compute_win32_has_symbol(module, "clBuildProgram") &&
+                stn_compute_win32_has_symbol(module, "clCreateKernel") &&
+                stn_compute_win32_has_symbol(module, "clCreateBuffer") &&
+                stn_compute_win32_has_symbol(module, "clSetKernelArg") &&
+                stn_compute_win32_has_symbol(module, "clEnqueueNDRangeKernel") &&
+                stn_compute_win32_has_symbol(module, "clEnqueueReadBuffer") &&
+                stn_compute_win32_has_symbol(module, "clFinish");
+
+        case STN_COMPUTE_PROVIDER_CUDA:
+            return
+                stn_compute_win32_has_symbol(module, "cuInit") &&
+                stn_compute_win32_has_symbol(module, "cuDeviceGetCount") &&
+                stn_compute_win32_has_symbol(module, "cuDeviceGet") &&
+                stn_compute_win32_has_symbol(module, "cuCtxCreate_v2") &&
+                stn_compute_win32_has_symbol(module, "cuModuleLoadDataEx") &&
+                stn_compute_win32_has_symbol(module, "cuModuleGetFunction") &&
+                stn_compute_win32_has_symbol(module, "cuLaunchKernel");
+
+        case STN_COMPUTE_PROVIDER_HIP:
+            return
+                stn_compute_win32_has_symbol(module, "hipInit") &&
+                stn_compute_win32_has_symbol(module, "hipGetDeviceCount") &&
+                stn_compute_win32_has_symbol(module, "hipSetDevice") &&
+                stn_compute_win32_has_symbol(module, "hipModuleLoadData") &&
+                stn_compute_win32_has_symbol(module, "hipModuleGetFunction") &&
+                stn_compute_win32_has_symbol(module, "hipModuleLaunchKernel");
+
+        case STN_COMPUTE_PROVIDER_LEVEL_ZERO:
+            return
+                stn_compute_win32_has_symbol(module, "zeInit") &&
+                stn_compute_win32_has_symbol(module, "zeDriverGet") &&
+                stn_compute_win32_has_symbol(module, "zeDeviceGet") &&
+                stn_compute_win32_has_symbol(module, "zeContextCreate") &&
+                stn_compute_win32_has_symbol(module, "zeModuleCreate") &&
+                stn_compute_win32_has_symbol(module, "zeKernelCreate");
+
+        case STN_COMPUTE_PROVIDER_VULKAN:
+            return
+                stn_compute_win32_has_symbol(module, "vkGetInstanceProcAddr") &&
+                stn_compute_win32_has_symbol(module, "vkCreateInstance") &&
+                stn_compute_win32_has_symbol(module, "vkEnumeratePhysicalDevices");
+
+        case STN_COMPUTE_PROVIDER_D3D12:
+            return
+                stn_compute_win32_has_symbol(module, "D3D12CreateDevice") &&
+                stn_compute_win32_has_symbol(module, "D3D12SerializeRootSignature");
+
+        default:
+            return 0;
+    }
+}
+
 static void stn_compute_win32_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -29,10 +111,6 @@ static void stn_compute_win32_probe(
         return;
     }
 
-    FreeLibrary(
-        module
-    );
-
     provider =
         &inventory->providers[
             inventory->count
@@ -40,8 +118,17 @@ static void stn_compute_win32_probe(
 
     provider->type = type;
     provider->runtime = runtime;
+    provider->api_ready =
+        stn_compute_win32_api_ready(
+            module,
+            type
+        );
 
     inventory->count++;
+
+    FreeLibrary(
+        module
+    );
 }
 
 stn_compute_status stn_compute_platform_detect(
@@ -55,11 +142,12 @@ stn_compute_status stn_compute_platform_detect(
     inventory->count = 0u;
 
     /*
-     * Discovery only.
+     * Runtime/API qualification only.
      *
-     * Loading and immediately releasing a runtime confirms
-     * presence without enumerating devices, creating a
-     * compute context, compiling kernels, or hashing.
+     * This stage loads each runtime and checks the symbols
+     * required for a future compute backend. It does not
+     * enumerate devices, create contexts, compile kernels,
+     * or execute work.
      */
     stn_compute_win32_probe(
         inventory,
