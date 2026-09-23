@@ -42,6 +42,7 @@ typedef struct stn_compute_provider {
     int argument_ready;
     int execution_ready;
     int result_ready;
+    int vector_ready;
 } stn_compute_provider;
 
 typedef struct stn_compute_inventory {
