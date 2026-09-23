@@ -177,7 +177,7 @@ static void stn_miner_detect_compute(void)
          ++i) {
 
         stn_log_write(
-            "COMPUTE_PROVIDER index=%u type=%s runtime=%s api_ready=%d platform_ready=%d platform_count=%u device_query_ready=%d device_count=%u device_identity_ready=%d device_name=%s device_vendor=%s context_ready=%d queue_ready=%d buffer_ready=%d transfer_ready=%d program_ready=%d build_ready=%d kernel_ready=%d argument_ready=%d execution_ready=%d result_ready=%d vector_ready=%d",
+            "COMPUTE_PROVIDER index=%u type=%s runtime=%s api_ready=%d platform_ready=%d platform_count=%u device_query_ready=%d device_count=%u device_identity_ready=%d device_name=%s device_vendor=%s context_ready=%d queue_ready=%d buffer_ready=%d transfer_ready=%d program_ready=%d build_ready=%d kernel_ready=%d argument_ready=%d execution_ready=%d result_ready=%d vector_ready=%d sha256_ready=%d",
             (unsigned int) i,
             stn_compute_provider_name(
                 inventory.providers[i].type
@@ -207,7 +207,8 @@ static void stn_miner_detect_compute(void)
             inventory.providers[i].argument_ready,
             inventory.providers[i].execution_ready,
             inventory.providers[i].result_ready,
-            inventory.providers[i].vector_ready
+            inventory.providers[i].vector_ready,
+            inventory.providers[i].sha256_ready
         );
     }
 }
