@@ -11,7 +11,7 @@
 #define STN_OPENCL_TRUE 1u
 #define STN_GPU_BACKEND_HEADER_SIZE 168u
 #define STN_GPU_BACKEND_TARGET_SIZE 32u
-#define STN_GPU_BACKEND_MAX_CHUNK 4096u
+#define STN_GPU_BACKEND_MAX_CHUNK 65536u
 
 typedef int (*stn_cl_get_platform_ids_fn)(
     unsigned int,
@@ -151,6 +151,8 @@ typedef struct stn_gpu_backend_state {
     void *header_buffer;
     void *target_buffer;
     void *match_buffer;
+    uint8_t job_work_id[STNM_WORK_ID_SIZE];
+    int job_loaded;
 
     stn_cl_get_platform_ids_fn get_platform_ids;
     stn_cl_get_device_ids_fn get_device_ids;
@@ -534,38 +536,54 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
     count =
         (size_t) count64;
 
-    result =
-        state.enqueue_write(
-            state.queue,
-            state.header_buffer,
-            STN_OPENCL_TRUE,
-            0u,
-            STN_GPU_BACKEND_HEADER_SIZE,
-            job->block,
-            0u,
-            NULL,
-            NULL
+    if (!state.job_loaded ||
+        memcmp(
+            state.job_work_id,
+            job->work_id,
+            STNM_WORK_ID_SIZE
+        ) != 0) {
+
+        result =
+            state.enqueue_write(
+                state.queue,
+                state.header_buffer,
+                STN_OPENCL_TRUE,
+                0u,
+                STN_GPU_BACKEND_HEADER_SIZE,
+                job->block,
+                0u,
+                NULL,
+                NULL
+            );
+
+        if (result != 0) {
+            return STN_GPU_BACKEND_ERROR;
+        }
+
+        result =
+            state.enqueue_write(
+                state.queue,
+                state.target_buffer,
+                STN_OPENCL_TRUE,
+                0u,
+                STN_GPU_BACKEND_TARGET_SIZE,
+                job->target,
+                0u,
+                NULL,
+                NULL
+            );
+
+        if (result != 0) {
+            return STN_GPU_BACKEND_ERROR;
+        }
+
+        memcpy(
+            state.job_work_id,
+            job->work_id,
+            STNM_WORK_ID_SIZE
         );
 
-    if (result != 0) {
-        return STN_GPU_BACKEND_ERROR;
-    }
-
-    result =
-        state.enqueue_write(
-            state.queue,
-            state.target_buffer,
-            STN_OPENCL_TRUE,
-            0u,
-            STN_GPU_BACKEND_TARGET_SIZE,
-            job->target,
-            0u,
-            NULL,
-            NULL
-        );
-
-    if (result != 0) {
-        return STN_GPU_BACKEND_ERROR;
+        state.job_loaded = 1;
     }
 
     result =
@@ -591,15 +609,6 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
             0u,
             NULL,
             NULL
-        );
-
-    if (result != 0) {
-        return STN_GPU_BACKEND_ERROR;
-    }
-
-    result =
-        state.finish(
-            state.queue
         );
 
     if (result != 0) {
