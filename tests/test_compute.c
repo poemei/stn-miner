@@ -41,6 +41,7 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[0].transfer_ready = 1;
     inventory->providers[0].program_ready = 1;
     inventory->providers[0].build_ready = 1;
+    inventory->providers[0].kernel_ready = 1;
 
     inventory->providers[1].type =
         STN_COMPUTE_PROVIDER_VULKAN;
@@ -62,6 +63,7 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[1].transfer_ready = 0;
     inventory->providers[1].program_ready = 0;
     inventory->providers[1].build_ready = 0;
+    inventory->providers[1].kernel_ready = 0;
 
     return STN_COMPUTE_OK;
 }
@@ -196,6 +198,11 @@ int main(void)
     check(
         inventory.providers[0].build_ready == 1,
         "OpenCL program build readiness preserved"
+    );
+
+    check(
+        inventory.providers[0].kernel_ready == 1,
+        "OpenCL kernel object readiness preserved"
     );
 
     check(
