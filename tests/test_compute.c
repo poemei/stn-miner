@@ -21,11 +21,15 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[0].runtime =
         "test-opencl";
 
+    inventory->providers[0].api_ready = 1;
+
     inventory->providers[1].type =
         STN_COMPUTE_PROVIDER_VULKAN;
 
     inventory->providers[1].runtime =
         "test-vulkan";
+
+    inventory->providers[1].api_ready = 0;
 
     return STN_COMPUTE_OK;
 }
@@ -79,6 +83,16 @@ int main(void)
     check(
         inventory.count == 2u,
         "provider count"
+    );
+
+    check(
+        inventory.providers[0].api_ready == 1,
+        "ready provider preserved"
+    );
+
+    check(
+        inventory.providers[1].api_ready == 0,
+        "unready provider preserved"
     );
 
     check(
