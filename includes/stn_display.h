@@ -32,6 +32,7 @@ typedef struct stn_display_state {
 
     uint64_t nonce;
     uint64_t hashes_completed;
+    uint64_t total_shares;
 
     stn_display_job_entry jobs[STN_DISPLAY_HISTORY_COUNT];
     size_t job_count;
@@ -71,6 +72,10 @@ void stn_display_set_hashes(
 void stn_display_set_result(
     stn_display_state *state,
     const char *result
+);
+
+void stn_display_add_share(
+    stn_display_state *state
 );
 
 void stn_display_render(
