@@ -151,6 +151,7 @@ typedef struct stn_gpu_backend_state {
     void *header_buffer;
     void *target_buffer;
     void *match_buffer;
+    void *midstate_buffer;
     uint8_t job_work_id[STNM_WORK_ID_SIZE];
     int job_loaded;
 
@@ -460,6 +461,22 @@ stn_gpu_backend_status stn_gpu_backend_platform_prepare(
         return STN_GPU_BACKEND_ERROR;
     }
 
+    result = 0;
+
+    state.midstate_buffer =
+        state.create_buffer(
+            state.context,
+            STN_OPENCL_MEM_READ_WRITE,
+            32u,
+            NULL,
+            &result
+        );
+
+    if (state.midstate_buffer == NULL ||
+        result != 0) {
+        return STN_GPU_BACKEND_ERROR;
+    }
+
     result =
         state.set_kernel_arg(
             state.kernel,
@@ -496,12 +513,25 @@ stn_gpu_backend_status stn_gpu_backend_platform_prepare(
         return STN_GPU_BACKEND_ERROR;
     }
 
+    result =
+        state.set_kernel_arg(
+            state.kernel,
+            4u,
+            sizeof(state.midstate_buffer),
+            &state.midstate_buffer
+        );
+
+    if (result != 0) {
+        return STN_GPU_BACKEND_ERROR;
+    }
+
     state.ready = 1;
     return STN_GPU_BACKEND_OK;
 }
 
 stn_gpu_backend_status stn_gpu_backend_platform_search(
     const stn_miner_job *job,
+    const uint8_t midstate[32],
     uint64_t nonce_start,
     uint64_t nonce_end,
     stn_miner_solution *solution
@@ -518,6 +548,7 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
     }
 
     if (job == NULL ||
+        midstate == NULL ||
         solution == NULL ||
         job->block == NULL ||
         job->block_length < STN_GPU_BACKEND_HEADER_SIZE ||
@@ -568,6 +599,23 @@ stn_gpu_backend_status stn_gpu_backend_platform_search(
                 0u,
                 STN_GPU_BACKEND_TARGET_SIZE,
                 job->target,
+                0u,
+                NULL,
+                NULL
+            );
+
+        if (result != 0) {
+            return STN_GPU_BACKEND_ERROR;
+        }
+
+        result =
+            state.enqueue_write(
+                state.queue,
+                state.midstate_buffer,
+                STN_OPENCL_TRUE,
+                0u,
+                32u,
+                midstate,
                 0u,
                 NULL,
                 NULL
