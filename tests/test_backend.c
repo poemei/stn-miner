@@ -19,11 +19,18 @@ static void check(
 int main(void)
 {
     stn_backend backend;
+    stn_gpu_inventory inventory;
 
     memset(
         &backend,
         0,
         sizeof(backend)
+    );
+
+    memset(
+        &inventory,
+        0,
+        sizeof(inventory)
     );
 
     check(
@@ -51,6 +58,22 @@ int main(void)
             "CPU"
         ) == 0,
         "CPU name"
+    );
+
+    check(
+        stn_backend_candidate_type(
+            &inventory
+        ) == STN_BACKEND_TYPE_CPU,
+        "CPU candidate without GPU"
+    );
+
+    inventory.count = 1u;
+
+    check(
+        stn_backend_candidate_type(
+            &inventory
+        ) == STN_BACKEND_TYPE_GPU,
+        "GPU candidate when detected"
     );
 
     check(
