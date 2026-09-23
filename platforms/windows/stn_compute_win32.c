@@ -39,6 +39,7 @@ static int stn_compute_win32_api_ready(
                 stn_compute_win32_has_symbol(module, "clCreateCommandQueue") &&
                 stn_compute_win32_has_symbol(module, "clReleaseCommandQueue") &&
                 stn_compute_win32_has_symbol(module, "clCreateProgramWithSource") &&
+                stn_compute_win32_has_symbol(module, "clReleaseProgram") &&
                 stn_compute_win32_has_symbol(module, "clBuildProgram") &&
                 stn_compute_win32_has_symbol(module, "clCreateKernel") &&
                 stn_compute_win32_has_symbol(module, "clCreateBuffer") &&
@@ -172,6 +173,18 @@ typedef int (__stdcall *stn_opencl_enqueue_read_buffer_fn)(
     void *,
     unsigned int,
     const void *,
+    void *
+);
+
+typedef void *(__stdcall *stn_opencl_create_program_with_source_fn)(
+    void *,
+    unsigned int,
+    const char **,
+    const size_t *,
+    int *
+);
+
+typedef int (__stdcall *stn_opencl_release_program_fn)(
     void *
 );
 
@@ -1220,6 +1233,178 @@ static void stn_compute_win32_qualify_opencl_transfer(
     provider->transfer_ready = 1;
 }
 
+static void stn_compute_win32_qualify_opencl_program(
+    HMODULE module,
+    stn_compute_provider *provider
+)
+{
+    static const char source_text[] =
+        "__kernel void stn_qualify(void) { }";
+
+    const char *source;
+
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    stn_opencl_get_device_ids_fn get_device_ids;
+    stn_opencl_create_context_fn create_context;
+    stn_opencl_release_context_fn release_context;
+    stn_opencl_create_program_with_source_fn create_program;
+    stn_opencl_release_program_fn release_program;
+    void *platforms[STN_OPENCL_MAX_PLATFORMS];
+    void *device;
+    void *context;
+    void *program;
+    unsigned int platform_count;
+    unsigned int i;
+    int result;
+    int program_release_result;
+    int context_release_result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->transfer_ready ||
+        provider->platform_count == 0u ||
+        provider->platform_count >
+            STN_OPENCL_MAX_PLATFORMS) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        GetProcAddress(module, "clGetPlatformIDs");
+
+    get_device_ids =
+        (stn_opencl_get_device_ids_fn)
+        GetProcAddress(module, "clGetDeviceIDs");
+
+    create_context =
+        (stn_opencl_create_context_fn)
+        GetProcAddress(module, "clCreateContext");
+
+    release_context =
+        (stn_opencl_release_context_fn)
+        GetProcAddress(module, "clReleaseContext");
+
+    create_program =
+        (stn_opencl_create_program_with_source_fn)
+        GetProcAddress(module, "clCreateProgramWithSource");
+
+    release_program =
+        (stn_opencl_release_program_fn)
+        GetProcAddress(module, "clReleaseProgram");
+
+    if (get_platform_ids == NULL ||
+        get_device_ids == NULL ||
+        create_context == NULL ||
+        release_context == NULL ||
+        create_program == NULL ||
+        release_program == NULL) {
+        return;
+    }
+
+    platform_count =
+        (unsigned int)
+        provider->platform_count;
+
+    result =
+        get_platform_ids(
+            platform_count,
+            platforms,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    device = NULL;
+
+    for (i = 0u;
+         i < platform_count;
+         ++i) {
+
+        result =
+            get_device_ids(
+                platforms[i],
+                STN_OPENCL_DEVICE_TYPE_GPU,
+                1u,
+                &device,
+                NULL
+            );
+
+        if (result ==
+            STN_OPENCL_DEVICE_NOT_FOUND) {
+            continue;
+        }
+
+        if (result != 0 ||
+            device == NULL) {
+            return;
+        }
+
+        break;
+    }
+
+    if (device == NULL) {
+        return;
+    }
+
+    result = 0;
+
+    context =
+        create_context(
+            NULL,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            &result
+        );
+
+    if (context == NULL ||
+        result != 0) {
+        return;
+    }
+
+    source = source_text;
+    result = 0;
+
+    program =
+        create_program(
+            context,
+            1u,
+            &source,
+            NULL,
+            &result
+        );
+
+    if (program == NULL ||
+        result != 0) {
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    program_release_result =
+        release_program(
+            program
+        );
+
+    context_release_result =
+        release_context(
+            context
+        );
+
+    if (program_release_result != 0 ||
+        context_release_result != 0) {
+        return;
+    }
+
+    provider->program_ready = 1;
+}
+
 static void stn_compute_win32_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -1268,6 +1453,7 @@ static void stn_compute_win32_probe(
     provider->queue_ready = 0;
     provider->buffer_ready = 0;
     provider->transfer_ready = 0;
+    provider->program_ready = 0;
 
     if (type ==
         STN_COMPUTE_PROVIDER_OPENCL) {
@@ -1302,6 +1488,11 @@ static void stn_compute_win32_probe(
         );
 
         stn_compute_win32_qualify_opencl_transfer(
+            module,
+            provider
+        );
+
+        stn_compute_win32_qualify_opencl_program(
             module,
             provider
         );
