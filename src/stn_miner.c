@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "stn_backend.h"
 #include "stn_cpu.h"
 #include "stn_display.h"
 #include "stn_gpu.h"
@@ -754,6 +755,8 @@ stn_miner_status stn_miner_run(
 )
 {
     stn_platform_status platform_status;
+    stn_backend backend;
+    stn_backend_status backend_status;
     stn_display_state display;
 
     if (config == NULL ||
@@ -763,12 +766,29 @@ stn_miner_status stn_miner_run(
         return STN_MINER_INVALID_ARGUMENT;
     }
 
+    backend_status =
+        stn_backend_select(
+            &backend
+        );
+
+    if (backend_status !=
+        STN_BACKEND_OK) {
+
+        stn_log_write(
+            "BACKEND_SELECT_FAILED status=%d",
+            (int) backend_status
+        );
+
+        return STN_MINER_ERROR;
+    }
+
     stn_log_write(
-        "START address=%s stratum=%s:%u backend=CPU",
+        "START address=%s stratum=%s:%u backend=%s",
         config->address,
         config->stratum_host,
         (unsigned int)
-            config->stratum_port
+            config->stratum_port,
+        backend.name
     );
 
     platform_status =
@@ -790,7 +810,7 @@ stn_miner_status stn_miner_run(
     stn_display_init(
         &display,
         config,
-        "CPU"
+        backend.name
     );
 
     stn_miner_detect_gpu(
@@ -1115,16 +1135,17 @@ stn_miner_status stn_miner_run(
                         (STN_MINER_HASH_CHUNK - 1u);
                 }
 
-                cpu_status =
-                    stn_cpu_search(
+                backend_status =
+                    stn_backend_search(
+                        &backend,
                         &job,
                         nonce_start,
                         chunk_end,
                         &solution
                     );
 
-                if (cpu_status ==
-                    STN_CPU_NO_SOLUTION) {
+                if (backend_status ==
+                    STN_BACKEND_NO_SOLUTION) {
 
                     chunk_hashes =
                         (chunk_end -
@@ -1293,12 +1314,13 @@ stn_miner_status stn_miner_run(
                     continue;
                 }
 
-                if (cpu_status !=
-                    STN_CPU_OK) {
+                if (backend_status !=
+                    STN_BACKEND_OK) {
 
                     stn_log_write(
-                        "MINING_CPU_FAILED cpu_status=%d",
-                        (int) cpu_status
+                        "MINING_BACKEND_FAILED backend=%s status=%d",
+                        backend.name,
+                        (int) backend_status
                     );
 
                     stn_display_set_status(
@@ -1308,7 +1330,7 @@ stn_miner_status stn_miner_run(
 
                     stn_display_set_result(
                         &display,
-                        "CPU mining failure"
+                        "Backend mining failure"
                     );
 
                     stn_display_render(
