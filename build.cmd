@@ -7,6 +7,7 @@ cl /nologo /std:c17 /W4 /O2 ^
     /I includes ^
     src\main.c ^
     src\stn_config.c ^
+    src\stn_compute.c ^
     src\stn_backend.c ^
     src\stn_display.c ^
     src\stn_gpu.c ^
@@ -15,6 +16,7 @@ cl /nologo /std:c17 /W4 /O2 ^
     src\stn_protocol.c ^
     src\stn_hash.c ^
     src\stn_cpu.c ^
+    platforms\windows\stn_compute_win32.c ^
     platforms\windows\stn_gpu_win32.c ^
     platforms\windows\stn_platform_win32.c ^
     /Fe:build\stn-miner.exe ^
