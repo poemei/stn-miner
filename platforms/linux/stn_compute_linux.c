@@ -40,6 +40,7 @@ static int stn_compute_linux_api_ready(
                 stn_compute_linux_has_symbol(module, "clBuildProgram") &&
                 stn_compute_linux_has_symbol(module, "clCreateKernel") &&
                 stn_compute_linux_has_symbol(module, "clCreateBuffer") &&
+                stn_compute_linux_has_symbol(module, "clReleaseMemObject") &&
                 stn_compute_linux_has_symbol(module, "clSetKernelArg") &&
                 stn_compute_linux_has_symbol(module, "clEnqueueNDRangeKernel") &&
                 stn_compute_linux_has_symbol(module, "clEnqueueReadBuffer") &&
@@ -131,11 +132,25 @@ typedef int (*stn_opencl_release_command_queue_fn)(
     void *
 );
 
+typedef void *(*stn_opencl_create_buffer_fn)(
+    void *,
+    unsigned long long,
+    size_t,
+    void *,
+    int *
+);
+
+typedef int (*stn_opencl_release_mem_object_fn)(
+    void *
+);
+
 #define STN_OPENCL_DEVICE_TYPE_GPU (1ull << 2)
 #define STN_OPENCL_DEVICE_NOT_FOUND (-1)
 #define STN_OPENCL_MAX_PLATFORMS 16u
 #define STN_OPENCL_DEVICE_NAME 0x102bu
 #define STN_OPENCL_DEVICE_VENDOR 0x102cu
+#define STN_OPENCL_MEM_READ_WRITE (1ull << 0)
+#define STN_OPENCL_QUALIFY_BUFFER_SIZE 64u
 
 static void stn_compute_linux_qualify_opencl_platforms(
     void *module,
@@ -687,6 +702,216 @@ static void stn_compute_linux_qualify_opencl_queue(
     provider->queue_ready = 1;
 }
 
+static void stn_compute_linux_qualify_opencl_buffer(
+    void * module,
+    stn_compute_provider *provider
+)
+{
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    stn_opencl_get_device_ids_fn get_device_ids;
+    stn_opencl_create_context_fn create_context;
+    stn_opencl_release_context_fn release_context;
+    stn_opencl_create_command_queue_fn create_queue;
+    stn_opencl_release_command_queue_fn release_queue;
+    stn_opencl_create_buffer_fn create_buffer;
+    stn_opencl_release_mem_object_fn release_mem_object;
+    void *platforms[STN_OPENCL_MAX_PLATFORMS];
+    void *device;
+    void *context;
+    void *queue;
+    void *buffer;
+    unsigned int platform_count;
+    unsigned int i;
+    int result;
+    int buffer_release_result;
+    int queue_release_result;
+    int context_release_result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->queue_ready ||
+        provider->platform_count == 0u ||
+        provider->platform_count >
+            STN_OPENCL_MAX_PLATFORMS) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        dlsym(module, "clGetPlatformIDs");
+
+    get_device_ids =
+        (stn_opencl_get_device_ids_fn)
+        dlsym(module, "clGetDeviceIDs");
+
+    create_context =
+        (stn_opencl_create_context_fn)
+        dlsym(module, "clCreateContext");
+
+    release_context =
+        (stn_opencl_release_context_fn)
+        dlsym(module, "clReleaseContext");
+
+    create_queue =
+        (stn_opencl_create_command_queue_fn)
+        dlsym(module, "clCreateCommandQueue");
+
+    release_queue =
+        (stn_opencl_release_command_queue_fn)
+        dlsym(module, "clReleaseCommandQueue");
+
+    create_buffer =
+        (stn_opencl_create_buffer_fn)
+        dlsym(module, "clCreateBuffer");
+
+    release_mem_object =
+        (stn_opencl_release_mem_object_fn)
+        dlsym(module, "clReleaseMemObject");
+
+    if (get_platform_ids == NULL ||
+        get_device_ids == NULL ||
+        create_context == NULL ||
+        release_context == NULL ||
+        create_queue == NULL ||
+        release_queue == NULL ||
+        create_buffer == NULL ||
+        release_mem_object == NULL) {
+        return;
+    }
+
+    platform_count =
+        (unsigned int)
+        provider->platform_count;
+
+    result =
+        get_platform_ids(
+            platform_count,
+            platforms,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    device = NULL;
+
+    for (i = 0u;
+         i < platform_count;
+         ++i) {
+
+        result =
+            get_device_ids(
+                platforms[i],
+                STN_OPENCL_DEVICE_TYPE_GPU,
+                1u,
+                &device,
+                NULL
+            );
+
+        if (result ==
+            STN_OPENCL_DEVICE_NOT_FOUND) {
+            continue;
+        }
+
+        if (result != 0 ||
+            device == NULL) {
+            return;
+        }
+
+        break;
+    }
+
+    if (device == NULL) {
+        return;
+    }
+
+    result = 0;
+
+    context =
+        create_context(
+            NULL,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            &result
+        );
+
+    if (context == NULL ||
+        result != 0) {
+        return;
+    }
+
+    result = 0;
+
+    queue =
+        create_queue(
+            context,
+            device,
+            0u,
+            &result
+        );
+
+    if (queue == NULL ||
+        result != 0) {
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    result = 0;
+
+    buffer =
+        create_buffer(
+            context,
+            STN_OPENCL_MEM_READ_WRITE,
+            STN_OPENCL_QUALIFY_BUFFER_SIZE,
+            NULL,
+            &result
+        );
+
+    if (buffer == NULL ||
+        result != 0) {
+
+        (void) release_queue(
+            queue
+        );
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    buffer_release_result =
+        release_mem_object(
+            buffer
+        );
+
+    queue_release_result =
+        release_queue(
+            queue
+        );
+
+    context_release_result =
+        release_context(
+            context
+        );
+
+    if (buffer_release_result != 0 ||
+        queue_release_result != 0 ||
+        context_release_result != 0) {
+        return;
+    }
+
+    provider->buffer_ready = 1;
+}
+
 static void stn_compute_linux_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -734,6 +959,7 @@ static void stn_compute_linux_probe(
     provider->device_vendor[0] = '\0';
     provider->context_ready = 0;
     provider->queue_ready = 0;
+    provider->buffer_ready = 0;
 
     if (type ==
         STN_COMPUTE_PROVIDER_OPENCL) {
@@ -758,6 +984,11 @@ static void stn_compute_linux_probe(
         );
 
         stn_compute_linux_qualify_opencl_queue(
+            module,
+            provider
+        );
+
+        stn_compute_linux_qualify_opencl_buffer(
             module,
             provider
         );
