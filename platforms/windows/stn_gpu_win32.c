@@ -6,6 +6,8 @@
 #include "stn_gpu.h"
 #include "stn_gpu_platform.h"
 
+#define STN_GPU_WIN32_DEVICE_ID_MAX 256u
+
 static stn_gpu_vendor stn_gpu_win32_detect_vendor(
     const char *device_id
 )
@@ -42,14 +44,16 @@ static stn_gpu_vendor stn_gpu_win32_detect_vendor(
     return STN_GPU_VENDOR_UNKNOWN;
 }
 
-static void stn_gpu_win32_copy_name(
-    char destination[STN_GPU_NAME_MAX],
+static void stn_gpu_win32_copy_text(
+    char *destination,
+    size_t destination_size,
     const char *source
 )
 {
     size_t length;
 
-    if (destination == NULL) {
+    if (destination == NULL ||
+        destination_size == 0u) {
         return;
     }
 
@@ -63,9 +67,9 @@ static void stn_gpu_win32_copy_name(
         source
     );
 
-    if (length >= STN_GPU_NAME_MAX) {
+    if (length >= destination_size) {
         length =
-            STN_GPU_NAME_MAX - 1u;
+            destination_size - 1u;
     }
 
     if (length > 0u) {
@@ -80,17 +84,57 @@ static void stn_gpu_win32_copy_name(
         '\0';
 }
 
+static int stn_gpu_win32_is_duplicate(
+    char device_ids[
+        STN_GPU_MAX_DEVICES
+    ][STN_GPU_WIN32_DEVICE_ID_MAX],
+    size_t count,
+    const char *device_id
+)
+{
+    size_t i;
+
+    if (device_id == NULL ||
+        device_id[0] == '\0') {
+        return 0;
+    }
+
+    for (i = 0u;
+         i < count;
+         ++i) {
+
+        if (strcmp(
+                device_ids[i],
+                device_id
+            ) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 stn_gpu_status stn_gpu_platform_detect(
     stn_gpu_inventory *inventory
 )
 {
     DWORD adapter_index;
 
+    char device_ids[
+        STN_GPU_MAX_DEVICES
+    ][STN_GPU_WIN32_DEVICE_ID_MAX];
+
     if (inventory == NULL) {
         return STN_GPU_INVALID_ARGUMENT;
     }
 
     inventory->count = 0u;
+
+    memset(
+        device_ids,
+        0,
+        sizeof(device_ids)
+    );
 
     adapter_index = 0u;
 
@@ -122,9 +166,6 @@ stn_gpu_status stn_gpu_platform_detect(
 
         /*
          * Ignore software mirroring/display drivers.
-         *
-         * Physical GPUs and normal display adapters remain eligible
-         * even when they are not currently attached to the desktop.
          */
         if ((device.StateFlags &
              DISPLAY_DEVICE_MIRRORING_DRIVER) != 0u) {
@@ -132,11 +173,26 @@ stn_gpu_status stn_gpu_platform_detect(
         }
 
         /*
-         * A real enumerated adapter should have a device identity.
-         * Entries without one are not useful for normalized GPU
-         * inventory.
+         * An adapter without a device identity cannot be
+         * deterministically de-duplicated or classified.
          */
         if (device.DeviceID[0] == '\0') {
+            continue;
+        }
+
+        /*
+         * Windows may expose more than one display-adapter
+         * record for the same physical GPU.
+         *
+         * DeviceID is used as the normalized identity so
+         * duplicate representations are not counted as
+         * separate GPUs.
+         */
+        if (stn_gpu_win32_is_duplicate(
+                device_ids,
+                inventory->count,
+                device.DeviceID
+            )) {
             continue;
         }
 
@@ -156,13 +212,26 @@ stn_gpu_status stn_gpu_platform_detect(
                 device.DeviceID
             );
 
-        stn_gpu_win32_copy_name(
+        stn_gpu_win32_copy_text(
             gpu->name,
+            sizeof(gpu->name),
             device.DeviceString
         );
 
         gpu->device_index =
             (uint32_t) inventory->count;
+
+        stn_gpu_win32_copy_text(
+            device_ids[
+                inventory->count
+            ],
+            sizeof(
+                device_ids[
+                    inventory->count
+                ]
+            ),
+            device.DeviceID
+        );
 
         inventory->count++;
     }
