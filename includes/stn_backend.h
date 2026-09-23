@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "stn_miner.h"
+#include "stn_gpu.h"
 
 typedef enum stn_backend_type {
     STN_BACKEND_TYPE_NONE = 0,
@@ -36,6 +37,10 @@ stn_backend_status stn_backend_search(
     uint64_t nonce_start,
     uint64_t nonce_end,
     stn_miner_solution *solution
+);
+
+stn_backend_type stn_backend_candidate_type(
+    const stn_gpu_inventory *inventory
 );
 
 const char *stn_backend_type_name(
