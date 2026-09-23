@@ -87,6 +87,58 @@ static int stn_compute_win32_api_ready(
     }
 }
 
+typedef int (__stdcall *stn_opencl_get_platform_ids_fn)(
+    unsigned int,
+    void **,
+    unsigned int *
+);
+
+static void stn_compute_win32_qualify_opencl_platforms(
+    HMODULE module,
+    stn_compute_provider *provider
+)
+{
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    unsigned int platform_count;
+    int result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->api_ready) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        GetProcAddress(
+            module,
+            "clGetPlatformIDs"
+        );
+
+    if (get_platform_ids == NULL) {
+        return;
+    }
+
+    platform_count = 0u;
+
+    result =
+        get_platform_ids(
+            0u,
+            NULL,
+            &platform_count
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    provider->platform_count =
+        (size_t) platform_count;
+
+    provider->platform_ready =
+        platform_count > 0u ? 1 : 0;
+}
+
 static void stn_compute_win32_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -124,6 +176,17 @@ static void stn_compute_win32_probe(
             type
         );
 
+    provider->platform_ready = 0;
+    provider->platform_count = 0u;
+
+    if (type ==
+        STN_COMPUTE_PROVIDER_OPENCL) {
+        stn_compute_win32_qualify_opencl_platforms(
+            module,
+            provider
+        );
+    }
+
     inventory->count++;
 
     FreeLibrary(
@@ -147,7 +210,8 @@ stn_compute_status stn_compute_platform_detect(
      * This stage loads each runtime and checks the symbols
      * required for a future compute backend. It does not
      * enumerate devices, create contexts, compile kernels,
-     * or execute work.
+     * or execute work. OpenCL alone is allowed to query
+     * platform count at this stage.
      */
     stn_compute_win32_probe(
         inventory,
