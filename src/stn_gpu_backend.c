@@ -7,347 +7,292 @@
 #include "stn_hash.h"
 #include "stn_protocol.h"
 
-#define STN_GPU_BACKEND_MAX_CHUNK 65536u
+#define STN_GPU_BACKEND_MAX_CHUNK 4096u
 
 static const uint8_t stn_gpu_block_id_domain[] =
     "STN-CHAIN:BLOCK:ID:1";
 
-static uint8_t stn_gpu_midstate_work_id[STNM_WORK_ID_SIZE];
-static uint8_t stn_gpu_midstate[32];
-static int stn_gpu_midstate_valid = 0;
-
-static uint32_t stn_gpu_rotr32(
-    uint32_t value,
-    uint32_t shift
-)
-{
-    return
-        (value >> shift) |
-        (value << (32u - shift));
-}
-
-static uint32_t stn_gpu_read_u32_be(
-    const uint8_t bytes[4]
-)
-{
-    return
-        ((uint32_t) bytes[0] << 24) |
-        ((uint32_t) bytes[1] << 16) |
-        ((uint32_t) bytes[2] << 8) |
-        ((uint32_t) bytes[3]);
-}
-
-static void stn_gpu_write_u32_be(
-    uint8_t bytes[4],
-    uint32_t value
-)
-{
-    bytes[0] =
-        (uint8_t) (value >> 24);
-
-    bytes[1] =
-        (uint8_t) (value >> 16);
-
-    bytes[2] =
-        (uint8_t) (value >> 8);
-
-    bytes[3] =
-        (uint8_t) value;
-}
-
-static void stn_gpu_midstate_transform(
-    uint32_t state[8],
-    const uint8_t block[64]
-)
-{
-    static const uint32_t constants[64] = {
-        0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u,
-        0x3956c25bu, 0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u,
-        0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u,
-        0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u, 0xc19bf174u,
-        0xe49b69c1u, 0xefbe4786u, 0x0fc19dc6u, 0x240ca1ccu,
-        0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau,
-        0x983e5152u, 0xa831c66du, 0xb00327c8u, 0xbf597fc7u,
-        0xc6e00bf3u, 0xd5a79147u, 0x06ca6351u, 0x14292967u,
-        0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu, 0x53380d13u,
-        0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u,
-        0xa2bfe8a1u, 0xa81a664bu, 0xc24b8b70u, 0xc76c51a3u,
-        0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u,
-        0x19a4c116u, 0x1e376c08u, 0x2748774cu, 0x34b0bcb5u,
-        0x391c0cb3u, 0x4ed8aa4au, 0x5b9cca4fu, 0x682e6ff3u,
-        0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u,
-        0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u
-    };
-
-    uint32_t words[64];
-    uint32_t a;
-    uint32_t b;
-    uint32_t c;
-    uint32_t d;
-    uint32_t e;
-    uint32_t f;
-    uint32_t g;
-    uint32_t h;
-    size_t i;
-
-    for (i = 0u; i < 16u; ++i) {
-        words[i] =
-            stn_gpu_read_u32_be(
-                &block[i * 4u]
-            );
-    }
-
-    for (i = 16u; i < 64u; ++i) {
-        uint32_t s0;
-        uint32_t s1;
-
-        s0 =
-            stn_gpu_rotr32(
-                words[i - 15u],
-                7u
-            ) ^
-            stn_gpu_rotr32(
-                words[i - 15u],
-                18u
-            ) ^
-            (words[i - 15u] >> 3u);
-
-        s1 =
-            stn_gpu_rotr32(
-                words[i - 2u],
-                17u
-            ) ^
-            stn_gpu_rotr32(
-                words[i - 2u],
-                19u
-            ) ^
-            (words[i - 2u] >> 10u);
-
-        words[i] =
-            words[i - 16u] +
-            s0 +
-            words[i - 7u] +
-            s1;
-    }
-
-    a = state[0];
-    b = state[1];
-    c = state[2];
-    d = state[3];
-    e = state[4];
-    f = state[5];
-    g = state[6];
-    h = state[7];
-
-    for (i = 0u; i < 64u; ++i) {
-        uint32_t s1;
-        uint32_t choice;
-        uint32_t temp1;
-        uint32_t s0;
-        uint32_t majority;
-        uint32_t temp2;
-
-        s1 =
-            stn_gpu_rotr32(e, 6u) ^
-            stn_gpu_rotr32(e, 11u) ^
-            stn_gpu_rotr32(e, 25u);
-
-        choice =
-            (e & f) ^
-            ((~e) & g);
-
-        temp1 =
-            h +
-            s1 +
-            choice +
-            constants[i] +
-            words[i];
-
-        s0 =
-            stn_gpu_rotr32(a, 2u) ^
-            stn_gpu_rotr32(a, 13u) ^
-            stn_gpu_rotr32(a, 22u);
-
-        majority =
-            (a & b) ^
-            (a & c) ^
-            (b & c);
-
-        temp2 =
-            s0 +
-            majority;
-
-        h = g;
-        g = f;
-        f = e;
-        e = d + temp1;
-        d = c;
-        c = b;
-        b = a;
-        a = temp1 + temp2;
-    }
-
-    state[0] += a;
-    state[1] += b;
-    state[2] += c;
-    state[3] += d;
-    state[4] += e;
-    state[5] += f;
-    state[6] += g;
-    state[7] += h;
-}
-
-static int stn_gpu_prepare_midstate(
-    const stn_miner_job *job
-)
-{
-    uint8_t prefix[128];
-    uint32_t state[8];
-    size_t i;
-
-    if (job == NULL ||
-        job->block == NULL ||
-        job->block_length < STNM_BLOCK_HEADER_LENGTH) {
-        return 0;
-    }
-
-    if (stn_gpu_midstate_valid &&
-        memcmp(
-            stn_gpu_midstate_work_id,
-            job->work_id,
-            STNM_WORK_ID_SIZE
-        ) == 0) {
-        return 1;
-    }
-
-    memcpy(
-        prefix,
-        stn_gpu_block_id_domain,
-        sizeof(stn_gpu_block_id_domain)
-    );
-
-    memcpy(
-        &prefix[
-            sizeof(stn_gpu_block_id_domain)
-        ],
-        job->block,
-        sizeof(prefix) -
-            sizeof(stn_gpu_block_id_domain)
-    );
-
-    state[0] = 0x6a09e667u;
-    state[1] = 0xbb67ae85u;
-    state[2] = 0x3c6ef372u;
-    state[3] = 0xa54ff53au;
-    state[4] = 0x510e527fu;
-    state[5] = 0x9b05688cu;
-    state[6] = 0x1f83d9abu;
-    state[7] = 0x5be0cd19u;
-
-    stn_gpu_midstate_transform(
-        state,
-        &prefix[0]
-    );
-
-    stn_gpu_midstate_transform(
-        state,
-        &prefix[64]
-    );
-
-    for (i = 0u; i < 8u; ++i) {
-        stn_gpu_write_u32_be(
-            &stn_gpu_midstate[
-                i * 4u
-            ],
-            state[i]
-        );
-    }
-
-    memcpy(
-        stn_gpu_midstate_work_id,
-        job->work_id,
-        STNM_WORK_ID_SIZE
-    );
-
-    stn_gpu_midstate_valid = 1;
-
-    return 1;
-}
-
 static const char stn_gpu_opencl_source[] =
-    "__constant uint k[64]={"
-    "0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,"
-    "0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,"
-    "0xd807aa98u,0x12835b01u,0x243185beu,0x550c7dc3u,"
-    "0x72be5d74u,0x80deb1feu,0x9bdc06a7u,0xc19bf174u,"
-    "0xe49b69c1u,0xefbe4786u,0x0fc19dc6u,0x240ca1ccu,"
-    "0x2de92c6fu,0x4a7484aau,0x5cb0a9dcu,0x76f988dau,"
-    "0x983e5152u,0xa831c66du,0xb00327c8u,0xbf597fc7u,"
-    "0xc6e00bf3u,0xd5a79147u,0x06ca6351u,0x14292967u,"
-    "0x27b70a85u,0x2e1b2138u,0x4d2c6dfcu,0x53380d13u,"
-    "0x650a7354u,0x766a0abbu,0x81c2c92eu,0x92722c85u,"
-    "0xa2bfe8a1u,0xa81a664bu,0xc24b8b70u,0xc76c51a3u,"
-    "0xd192e819u,0xd6990624u,0xf40e3585u,0x106aa070u,"
-    "0x19a4c116u,0x1e376c08u,0x2748774cu,0x34b0bcb5u,"
-    "0x391c0cb3u,0x4ed8aa4au,0x5b9cca4fu,0x682e6ff3u,"
-    "0x748f82eeu,0x78a5636fu,0x84c87814u,0x8cc70208u,"
-    "0x90befffau,0xa4506cebu,0xbef9a3f7u,0xc67178f2u};"
-    "uint rr(uint x,uint n){return (x>>n)|(x<<(32u-n));}"
-    "void cp(uint s[8],uint w[16]){"
-    "uint a=s[0],b=s[1],c=s[2],d=s[3];"
-    "uint e=s[4],f=s[5],g=s[6],h=s[7];"
-    "uint i;"
-    "for(i=0u;i<64u;i++){"
-    "uint wi;"
-    "if(i<16u){wi=w[i];}else{"
-    "uint x=w[(i+1u)&15u],y=w[(i+14u)&15u];"
-    "uint z0=rr(x,7u)^rr(x,18u)^(x>>3u);"
-    "uint z1=rr(y,17u)^rr(y,19u)^(y>>10u);"
-    "uint q=i&15u;"
-    "w[q]=w[q]+z0+w[(i+9u)&15u]+z1;"
-    "wi=w[q];}"
-    "uint S1=rr(e,6u)^rr(e,11u)^rr(e,25u);"
-    "uint ch=(e&f)^((~e)&g);"
-    "uint t1=h+S1+ch+k[i]+wi;"
-    "uint S0=rr(a,2u)^rr(a,13u)^rr(a,22u);"
-    "uint maj=(a&b)^(a&c)^(b&c);"
-    "uint t2=S0+maj;"
-    "h=g;g=f;f=e;e=d+t1;d=c;c=b;b=a;a=t1+t2;}"
-    "s[0]+=a;s[1]+=b;s[2]+=c;s[3]+=d;"
-    "s[4]+=e;s[5]+=f;s[6]+=g;s[7]+=h;}"
-    "__kernel void stn_mine("
-    "__global const uchar *header,"
-    "__global const uchar *target,"
-    "ulong nonce_start,"
-    "__global uchar *matches,"
-    "__global const uchar *mid){"
-    "size_t gid=get_global_id(0);"
-    "ulong nonce=nonce_start+(ulong)gid;"
-    "uint s[8],w[16],i;"
-    "uchar b[64];"
-    "for(i=0u;i<8u;i++){uint q=i*4u;"
-    "s[i]=((uint)mid[q]<<24)|((uint)mid[q+1]<<16)|"
-    "((uint)mid[q+2]<<8)|(uint)mid[q+3];}"
-    "for(i=0u;i<61u;i++)b[i]=header[107u+i];"
-    "b[45]=(uchar)(nonce>>56);b[46]=(uchar)(nonce>>48);"
-    "b[47]=(uchar)(nonce>>40);b[48]=(uchar)(nonce>>32);"
-    "b[49]=(uchar)(nonce>>24);b[50]=(uchar)(nonce>>16);"
-    "b[51]=(uchar)(nonce>>8);b[52]=(uchar)nonce;"
-    "b[61]=0x80;b[62]=0;b[63]=0;"
-    "for(i=0u;i<16u;i++){uint q=i*4u;"
-    "w[i]=((uint)b[q]<<24)|((uint)b[q+1]<<16)|"
-    "((uint)b[q+2]<<8)|(uint)b[q+3];}"
-    "cp(s,w);"
-    "for(i=0u;i<15u;i++)w[i]=0u;"
-    "w[15]=0x000005e8u;"
-    "cp(s,w);"
-    "matches[gid]=1;"
-    "for(i=0u;i<8u;i++){uint q=i*4u;"
-    "uint tv=((uint)target[q]<<24)|((uint)target[q+1]<<16)|"
-    "((uint)target[q+2]<<8)|(uint)target[q+3];"
-    "if(s[i]<tv)break;"
-    "if(s[i]>tv){matches[gid]=0;break;}}"
-    "}";
+"__constant uint STN_K[64] = {\n"
+"  0x428a2f98U,0x71374491U,0xb5c0fbcfU,0xe9b5dba5U,\n"
+"  0x3956c25bU,0x59f111f1U,0x923f82a4U,0xab1c5ed5U,\n"
+"  0xd807aa98U,0x12835b01U,0x243185beU,0x550c7dc3U,\n"
+"  0x72be5d74U,0x80deb1feU,0x9bdc06a7U,0xc19bf174U,\n"
+"  0xe49b69c1U,0xefbe4786U,0x0fc19dc6U,0x240ca1ccU,\n"
+"  0x2de92c6fU,0x4a7484aaU,0x5cb0a9dcU,0x76f988daU,\n"
+"  0x983e5152U,0xa831c66dU,0xb00327c8U,0xbf597fc7U,\n"
+"  0xc6e00bf3U,0xd5a79147U,0x06ca6351U,0x14292967U,\n"
+"  0x27b70a85U,0x2e1b2138U,0x4d2c6dfcU,0x53380d13U,\n"
+"  0x650a7354U,0x766a0abbU,0x81c2c92eU,0x92722c85U,\n"
+"  0xa2bfe8a1U,0xa81a664bU,0xc24b8b70U,0xc76c51a3U,\n"
+"  0xd192e819U,0xd6990624U,0xf40e3585U,0x106aa070U,\n"
+"  0x19a4c116U,0x1e376c08U,0x2748774cU,0x34b0bcb5U,\n"
+"  0x391c0cb3U,0x4ed8aa4aU,0x5b9cca4fU,0x682e6ff3U,\n"
+"  0x748f82eeU,0x78a5636fU,0x84c87814U,0x8cc70208U,\n"
+"  0x90befffaU,0xa4506cebU,0xbef9a3f7U,0xc67178f2U\n"
+"};\n"
+"\n"
+"__constant uchar STN_DOMAIN[20] = {\n"
+"  'S','T','N','-','C','H','A','I','N',':',\n"
+"  'B','L','O','C','K',':','I','D',':','1'\n"
+"};\n"
+"\n"
+"uint stn_rotr(uint x, uint n)\n"
+"{\n"
+"    return (x >> n) | (x << (32U - n));\n"
+"}\n"
+"\n"
+"uint stn_load_be32_private(const uchar *p)\n"
+"{\n"
+"    return ((uint)p[0] << 24) |\n"
+"           ((uint)p[1] << 16) |\n"
+"           ((uint)p[2] << 8) |\n"
+"           ((uint)p[3]);\n"
+"}\n"
+"\n"
+"uint stn_load_be32_global(__global const uchar *p)\n"
+"{\n"
+"    return ((uint)p[0] << 24) |\n"
+"           ((uint)p[1] << 16) |\n"
+"           ((uint)p[2] << 8) |\n"
+"           ((uint)p[3]);\n"
+"}\n"
+"\n"
+"void stn_sha256_compress(\n"
+"    const uchar *block,\n"
+"    uint state[8]\n"
+")\n"
+"{\n"
+"    uint w[64];\n"
+"    uint a;\n"
+"    uint b;\n"
+"    uint c;\n"
+"    uint d;\n"
+"    uint e;\n"
+"    uint f;\n"
+"    uint g;\n"
+"    uint h;\n"
+"    uint s0;\n"
+"    uint s1;\n"
+"    uint ch;\n"
+"    uint maj;\n"
+"    uint t1;\n"
+"    uint t2;\n"
+"    uint i;\n"
+"\n"
+"    for (i = 0U; i < 16U; ++i) {\n"
+"        w[i] =\n"
+"            stn_load_be32_private(\n"
+"                block + (i * 4U)\n"
+"            );\n"
+"    }\n"
+"\n"
+"    for (i = 16U; i < 64U; ++i) {\n"
+"        s0 =\n"
+"            stn_rotr(w[i - 15U], 7U) ^\n"
+"            stn_rotr(w[i - 15U], 18U) ^\n"
+"            (w[i - 15U] >> 3U);\n"
+"\n"
+"        s1 =\n"
+"            stn_rotr(w[i - 2U], 17U) ^\n"
+"            stn_rotr(w[i - 2U], 19U) ^\n"
+"            (w[i - 2U] >> 10U);\n"
+"\n"
+"        w[i] =\n"
+"            w[i - 16U] +\n"
+"            s0 +\n"
+"            w[i - 7U] +\n"
+"            s1;\n"
+"    }\n"
+"\n"
+"    a = state[0];\n"
+"    b = state[1];\n"
+"    c = state[2];\n"
+"    d = state[3];\n"
+"    e = state[4];\n"
+"    f = state[5];\n"
+"    g = state[6];\n"
+"    h = state[7];\n"
+"\n"
+"    for (i = 0U; i < 64U; ++i) {\n"
+"        s1 =\n"
+"            stn_rotr(e, 6U) ^\n"
+"            stn_rotr(e, 11U) ^\n"
+"            stn_rotr(e, 25U);\n"
+"\n"
+"        ch =\n"
+"            (e & f) ^\n"
+"            ((~e) & g);\n"
+"\n"
+"        t1 =\n"
+"            h +\n"
+"            s1 +\n"
+"            ch +\n"
+"            STN_K[i] +\n"
+"            w[i];\n"
+"\n"
+"        s0 =\n"
+"            stn_rotr(a, 2U) ^\n"
+"            stn_rotr(a, 13U) ^\n"
+"            stn_rotr(a, 22U);\n"
+"\n"
+"        maj =\n"
+"            (a & b) ^\n"
+"            (a & c) ^\n"
+"            (b & c);\n"
+"\n"
+"        t2 = s0 + maj;\n"
+"\n"
+"        h = g;\n"
+"        g = f;\n"
+"        f = e;\n"
+"        e = d + t1;\n"
+"        d = c;\n"
+"        c = b;\n"
+"        b = a;\n"
+"        a = t1 + t2;\n"
+"    }\n"
+"\n"
+"    state[0] += a;\n"
+"    state[1] += b;\n"
+"    state[2] += c;\n"
+"    state[3] += d;\n"
+"    state[4] += e;\n"
+"    state[5] += f;\n"
+"    state[6] += g;\n"
+"    state[7] += h;\n"
+"}\n"
+"\n"
+"int stn_hash_meets_target(\n"
+"    const uint state[8],\n"
+"    __global const uchar *target\n"
+")\n"
+"{\n"
+"    uint i;\n"
+"\n"
+"    for (i = 0U; i < 8U; ++i) {\n"
+"        uint target_word =\n"
+"            stn_load_be32_global(\n"
+"                target + (i * 4U)\n"
+"            );\n"
+"\n"
+"        if (state[i] < target_word) {\n"
+"            return 1;\n"
+"        }\n"
+"\n"
+"        if (state[i] > target_word) {\n"
+"            return 0;\n"
+"        }\n"
+"    }\n"
+"\n"
+"    return 1;\n"
+"}\n"
+"\n"
+"__kernel void stn_mine(\n"
+"    __global const uchar *header,\n"
+"    __global const uchar *target,\n"
+"    ulong nonce_start,\n"
+"    ulong nonce_count,\n"
+"    __global uint *matches\n"
+")\n"
+"{\n"
+"    size_t gid = get_global_id(0);\n"
+"    ulong nonce;\n"
+"    uchar message[256];\n"
+"    uint state[8];\n"
+"    uint i;\n"
+"\n"
+"    if ((ulong)gid >= nonce_count) {\n"
+"        return;\n"
+"    }\n"
+"\n"
+"    nonce = nonce_start + (ulong)gid;\n"
+"\n"
+"    for (i = 0U; i < 256U; ++i) {\n"
+"        message[i] = (uchar)0;\n"
+"    }\n"
+"\n"
+"    for (i = 0U; i < 20U; ++i) {\n"
+"        message[i] = STN_DOMAIN[i];\n"
+"    }\n"
+"\n"
+"    message[20] = (uchar)0;\n"
+"\n"
+"    for (i = 0U; i < 168U; ++i) {\n"
+"        message[21U + i] = header[i];\n"
+"    }\n"
+"\n"
+"    /*\n"
+"     * Original header nonce offset 152 becomes\n"
+"     * message offset 21 + 152 = 173.\n"
+"     */\n"
+"    message[173] = (uchar)(nonce >> 56);\n"
+"    message[174] = (uchar)(nonce >> 48);\n"
+"    message[175] = (uchar)(nonce >> 40);\n"
+"    message[176] = (uchar)(nonce >> 32);\n"
+"    message[177] = (uchar)(nonce >> 24);\n"
+"    message[178] = (uchar)(nonce >> 16);\n"
+"    message[179] = (uchar)(nonce >> 8);\n"
+"    message[180] = (uchar)(nonce);\n"
+"\n"
+"    /*\n"
+"     * SHA-256 message length:\n"
+"     *\n"
+"     * 20 domain bytes\n"
+"     *  1 separator byte\n"
+"     * 168 header bytes\n"
+"     * ----------------\n"
+"     * 189 bytes\n"
+"     */\n"
+"    message[189] = (uchar)0x80;\n"
+"\n"
+"    /* 189 * 8 = 1512 bits = 0x05e8 */\n"
+"    message[248] = (uchar)0x00;\n"
+"    message[249] = (uchar)0x00;\n"
+"    message[250] = (uchar)0x00;\n"
+"    message[251] = (uchar)0x00;\n"
+"    message[252] = (uchar)0x00;\n"
+"    message[253] = (uchar)0x00;\n"
+"    message[254] = (uchar)0x05;\n"
+"    message[255] = (uchar)0xe8;\n"
+"\n"
+"    state[0] = 0x6a09e667U;\n"
+"    state[1] = 0xbb67ae85U;\n"
+"    state[2] = 0x3c6ef372U;\n"
+"    state[3] = 0xa54ff53aU;\n"
+"    state[4] = 0x510e527fU;\n"
+"    state[5] = 0x9b05688cU;\n"
+"    state[6] = 0x1f83d9abU;\n"
+"    state[7] = 0x5be0cd19U;\n"
+"\n"
+"    stn_sha256_compress(\n"
+"        message + 0U,\n"
+"        state\n"
+"    );\n"
+"\n"
+"    stn_sha256_compress(\n"
+"        message + 64U,\n"
+"        state\n"
+"    );\n"
+"\n"
+"    stn_sha256_compress(\n"
+"        message + 128U,\n"
+"        state\n"
+"    );\n"
+"\n"
+"    stn_sha256_compress(\n"
+"        message + 192U,\n"
+"        state\n"
+"    );\n"
+"\n"
+"    matches[gid] =\n"
+"        stn_hash_meets_target(\n"
+"            state,\n"
+"            target\n"
+"        )\n"
+"            ? 1U\n"
+"            : 0U;\n"
+"}\n";
 
 static int stn_gpu_backend_verify(
     const stn_miner_job *job,
@@ -459,16 +404,9 @@ stn_gpu_backend_status stn_gpu_backend_search(
         return STN_GPU_BACKEND_INVALID_ARGUMENT;
     }
 
-    if (!stn_gpu_prepare_midstate(
-            job
-        )) {
-        return STN_GPU_BACKEND_ERROR;
-    }
-
     status =
         stn_gpu_backend_platform_search(
             job,
-            stn_gpu_midstate,
             nonce_start,
             nonce_end,
             solution
