@@ -65,6 +65,18 @@ stn_backend_status stn_backend_search(
     }
 }
 
+stn_backend_type stn_backend_candidate_type(
+    const stn_gpu_inventory *inventory
+)
+{
+    if (inventory != NULL &&
+        inventory->count > 0u) {
+        return STN_BACKEND_TYPE_GPU;
+    }
+
+    return STN_BACKEND_TYPE_CPU;
+}
+
 const char *stn_backend_type_name(
     stn_backend_type type
 )
