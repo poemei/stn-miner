@@ -8,6 +8,7 @@ TARGET = build/stn-miner
 SOURCES = \
 	src/main.c \
 	src/stn_config.c \
+	src/stn_backend.c \
 	src/stn_display.c \
 	src/stn_gpu.c \
 	src/stn_log.c \
