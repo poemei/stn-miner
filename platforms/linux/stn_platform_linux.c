@@ -36,6 +36,80 @@ void stn_platform_shutdown(void)
 {
 }
 
+
+stn_platform_status stn_platform_executable_path(
+    const char *filename,
+    char *output,
+    size_t output_size
+)
+{
+    char module_path[STN_PLATFORM_PATH_MAX];
+    ssize_t length;
+    char *separator;
+    size_t directory_length;
+    size_t filename_length;
+
+    if (filename == NULL ||
+        filename[0] == '\0' ||
+        output == NULL ||
+        output_size == 0u) {
+        return STN_PLATFORM_INVALID_ARGUMENT;
+    }
+
+    length = readlink(
+        "/proc/self/exe",
+        module_path,
+        sizeof(module_path) - 1u
+    );
+
+    if (length <= 0 ||
+        (size_t) length >=
+            sizeof(module_path)) {
+        return STN_PLATFORM_ERROR;
+    }
+
+    module_path[length] = '\0';
+
+    separator = strrchr(
+        module_path,
+        '/'
+    );
+
+    if (separator == NULL) {
+        return STN_PLATFORM_ERROR;
+    }
+
+    directory_length =
+        (size_t) (separator - module_path) + 1u;
+
+    filename_length =
+        strlen(filename);
+
+    if (directory_length +
+        filename_length + 1u >
+        output_size) {
+        return STN_PLATFORM_ERROR;
+    }
+
+    memcpy(
+        output,
+        module_path,
+        directory_length
+    );
+
+    memcpy(
+        output + directory_length,
+        filename,
+        filename_length
+    );
+
+    output[
+        directory_length + filename_length
+    ] = '\0';
+
+    return STN_PLATFORM_OK;
+}
+
 stn_platform_status stn_platform_socket_connect(
     stn_socket *connection,
     const char *host,
