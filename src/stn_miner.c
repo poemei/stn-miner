@@ -9,6 +9,7 @@
 
 #include "stn_cpu.h"
 #include "stn_display.h"
+#include "stn_gpu.h"
 #include "stn_log.h"
 #include "stn_miner.h"
 #include "stn_platform.h"
@@ -134,6 +135,125 @@ static void stn_miner_log_work_id(
         "%s work_id=%s",
         prefix,
         text
+    );
+}
+
+static void stn_miner_detect_gpu(
+    stn_display_state *display
+)
+{
+    stn_gpu_inventory inventory;
+    stn_gpu_status gpu_status;
+
+    char gpu_text[STN_DISPLAY_GPU_TEXT_SIZE];
+
+    size_t i;
+
+    if (display == NULL) {
+        return;
+    }
+
+    memset(
+        &inventory,
+        0,
+        sizeof(inventory)
+    );
+
+    gpu_status =
+        stn_gpu_detect(
+            &inventory
+        );
+
+    if (gpu_status ==
+        STN_GPU_NOT_FOUND) {
+
+        stn_log_write(
+            "GPU_DETECT none"
+        );
+
+        stn_display_set_gpu(
+            display,
+            "None detected"
+        );
+
+        return;
+    }
+
+    if (gpu_status !=
+        STN_GPU_OK) {
+
+        stn_log_write(
+            "GPU_DETECT_FAILED status=%d",
+            (int) gpu_status
+        );
+
+        stn_display_set_gpu(
+            display,
+            "Detection unavailable"
+        );
+
+        return;
+    }
+
+    if (inventory.count == 0u) {
+        stn_log_write(
+            "GPU_DETECT none"
+        );
+
+        stn_display_set_gpu(
+            display,
+            "None detected"
+        );
+
+        return;
+    }
+
+    stn_log_write(
+        "GPU_DETECT count=%u",
+        (unsigned int)
+            inventory.count
+    );
+
+    for (i = 0u;
+         i < inventory.count;
+         ++i) {
+
+        stn_log_write(
+            "GPU_DEVICE index=%u vendor=%s name=%s",
+            (unsigned int)
+                inventory.devices[i].device_index,
+            stn_gpu_vendor_name(
+                inventory.devices[i].vendor
+            ),
+            inventory.devices[i].name
+        );
+    }
+
+    if (inventory.count == 1u) {
+        (void) snprintf(
+            gpu_text,
+            sizeof(gpu_text),
+            "%s",
+            inventory.devices[0].name
+        );
+    } else {
+        (void) snprintf(
+            gpu_text,
+            sizeof(gpu_text),
+            "%s (+%u more)",
+            inventory.devices[0].name,
+            (unsigned int)
+                (inventory.count - 1u)
+        );
+    }
+
+    gpu_text[
+        sizeof(gpu_text) - 1u
+    ] = '\0';
+
+    stn_display_set_gpu(
+        display,
+        gpu_text
     );
 }
 
@@ -671,6 +791,10 @@ stn_miner_status stn_miner_run(
         &display,
         config,
         "CPU"
+    );
+
+    stn_miner_detect_gpu(
+        &display
     );
 
     stn_display_set_status(

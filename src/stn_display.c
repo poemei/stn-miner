@@ -188,6 +188,12 @@ void stn_display_init(
     );
 
     stn_display_copy_text(
+        state->gpu,
+        sizeof(state->gpu),
+        "Not detected"
+    );
+
+    stn_display_copy_text(
         state->status,
         sizeof(state->status),
         "Starting"
@@ -202,6 +208,34 @@ void stn_display_init(
     state->nonce = 0u;
     state->hashes_completed = 0u;
     state->job_count = 0u;
+}
+
+void stn_display_set_gpu(
+    stn_display_state *state,
+    const char *gpu
+)
+{
+    if (state == NULL) {
+        return;
+    }
+
+    if (gpu == NULL ||
+        gpu[0] == '\0') {
+
+        stn_display_copy_text(
+            state->gpu,
+            sizeof(state->gpu),
+            "Not detected"
+        );
+
+        return;
+    }
+
+    stn_display_copy_text(
+        state->gpu,
+        sizeof(state->gpu),
+        gpu
+    );
 }
 
 void stn_display_set_status(
@@ -361,6 +395,11 @@ void stn_display_render(
     printf(
         "Backend : %s\n",
         state->backend
+    );
+
+    printf(
+        "GPU     : %s\n",
+        state->gpu
     );
 
     printf(

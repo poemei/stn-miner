@@ -1,5 +1,3 @@
-/* stn-miner\includes\stn_display.h */
-
 #ifndef STN_DISPLAY_H
 #define STN_DISPLAY_H
 
@@ -12,7 +10,7 @@
 #define STN_DISPLAY_RESULT_TEXT_SIZE 32u
 #define STN_DISPLAY_STATUS_TEXT_SIZE 32u
 #define STN_DISPLAY_BACKEND_TEXT_SIZE 32u
-
+#define STN_DISPLAY_GPU_TEXT_SIZE 128u
 #define STN_DISPLAY_HISTORY_COUNT 5u
 
 typedef struct stn_display_job_entry {
@@ -27,6 +25,7 @@ typedef struct stn_display_state {
     uint16_t stratum_port;
 
     char backend[STN_DISPLAY_BACKEND_TEXT_SIZE];
+    char gpu[STN_DISPLAY_GPU_TEXT_SIZE];
     char status[STN_DISPLAY_STATUS_TEXT_SIZE];
 
     char current_job[STN_DISPLAY_JOB_TEXT_SIZE];
@@ -42,6 +41,11 @@ void stn_display_init(
     stn_display_state *state,
     const stn_miner_config *config,
     const char *backend
+);
+
+void stn_display_set_gpu(
+    stn_display_state *state,
+    const char *gpu
 );
 
 void stn_display_set_status(
