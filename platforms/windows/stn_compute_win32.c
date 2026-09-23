@@ -3038,6 +3038,474 @@ static void stn_compute_win32_qualify_opencl_result(
     provider->result_ready = 1;
 }
 
+static void stn_compute_win32_qualify_opencl_vector(
+    HMODULE module,
+    stn_compute_provider *provider
+)
+{
+    static const char source_text[] =
+        "__kernel void stn_qualify(__global uchar *out) { "
+        "uint a = 0x01234567u; "
+        "uint b = 0x89abcdefu; "
+        "uint c = 0x0f1e2d3cu; "
+        "uint d = 0xfedcba98u; "
+        "uint r0 = a + b; "
+        "uint r1 = c ^ d; "
+        "uint r2 = (a << 5) | (a >> 27); "
+        "uint r3 = (b * 33u) + c; "
+        "out[0]=(uchar)(r0>>24); out[1]=(uchar)(r0>>16); "
+        "out[2]=(uchar)(r0>>8); out[3]=(uchar)r0; "
+        "out[4]=(uchar)(r1>>24); out[5]=(uchar)(r1>>16); "
+        "out[6]=(uchar)(r1>>8); out[7]=(uchar)r1; "
+        "out[8]=(uchar)(r2>>24); out[9]=(uchar)(r2>>16); "
+        "out[10]=(uchar)(r2>>8); out[11]=(uchar)r2; "
+        "out[12]=(uchar)(r3>>24); out[13]=(uchar)(r3>>16); "
+        "out[14]=(uchar)(r3>>8); out[15]=(uchar)r3; }";
+
+    static const unsigned char expected[16] = {
+        0x8au, 0xcfu, 0x13u, 0x56u,
+        0xf1u, 0xc2u, 0x97u, 0xa4u,
+        0x24u, 0x68u, 0xacu, 0xe0u,
+        0xceu, 0x43u, 0xb9u, 0x0bu
+    };
+
+    const char *source;
+
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    stn_opencl_get_device_ids_fn get_device_ids;
+    stn_opencl_create_context_fn create_context;
+    stn_opencl_release_context_fn release_context;
+    stn_opencl_create_command_queue_fn create_queue;
+    stn_opencl_release_command_queue_fn release_queue;
+    stn_opencl_create_program_with_source_fn create_program;
+    stn_opencl_release_program_fn release_program;
+    stn_opencl_build_program_fn build_program;
+    stn_opencl_create_kernel_fn create_kernel;
+    stn_opencl_release_kernel_fn release_kernel;
+    stn_opencl_create_buffer_fn create_buffer;
+    stn_opencl_release_mem_object_fn release_mem_object;
+    stn_opencl_set_kernel_arg_fn set_kernel_arg;
+    stn_opencl_enqueue_ndrange_kernel_fn enqueue_ndrange_kernel;
+    stn_opencl_enqueue_read_buffer_fn enqueue_read_buffer;
+    stn_opencl_finish_fn finish;
+    void *platforms[STN_OPENCL_MAX_PLATFORMS];
+    void *device;
+    void *context;
+    void *queue;
+    void *program;
+    void *kernel;
+    void *buffer;
+    size_t global_work_size;
+    unsigned char output[16];
+    unsigned int platform_count;
+    unsigned int i;
+    int result;
+    int build_result;
+    int argument_result;
+    int enqueue_result;
+    int finish_result;
+    int read_result;
+    int buffer_release_result;
+    int kernel_release_result;
+    int program_release_result;
+    int queue_release_result;
+    int context_release_result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->result_ready ||
+        provider->platform_count == 0u ||
+        provider->platform_count >
+            STN_OPENCL_MAX_PLATFORMS) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        GetProcAddress(module, "clGetPlatformIDs");
+
+    get_device_ids =
+        (stn_opencl_get_device_ids_fn)
+        GetProcAddress(module, "clGetDeviceIDs");
+
+    create_context =
+        (stn_opencl_create_context_fn)
+        GetProcAddress(module, "clCreateContext");
+
+    release_context =
+        (stn_opencl_release_context_fn)
+        GetProcAddress(module, "clReleaseContext");
+
+    create_queue =
+        (stn_opencl_create_command_queue_fn)
+        GetProcAddress(module, "clCreateCommandQueue");
+
+    release_queue =
+        (stn_opencl_release_command_queue_fn)
+        GetProcAddress(module, "clReleaseCommandQueue");
+
+    create_program =
+        (stn_opencl_create_program_with_source_fn)
+        GetProcAddress(module, "clCreateProgramWithSource");
+
+    release_program =
+        (stn_opencl_release_program_fn)
+        GetProcAddress(module, "clReleaseProgram");
+
+    build_program =
+        (stn_opencl_build_program_fn)
+        GetProcAddress(module, "clBuildProgram");
+
+    create_kernel =
+        (stn_opencl_create_kernel_fn)
+        GetProcAddress(module, "clCreateKernel");
+
+    release_kernel =
+        (stn_opencl_release_kernel_fn)
+        GetProcAddress(module, "clReleaseKernel");
+
+    create_buffer =
+        (stn_opencl_create_buffer_fn)
+        GetProcAddress(module, "clCreateBuffer");
+
+    release_mem_object =
+        (stn_opencl_release_mem_object_fn)
+        GetProcAddress(module, "clReleaseMemObject");
+
+    set_kernel_arg =
+        (stn_opencl_set_kernel_arg_fn)
+        GetProcAddress(module, "clSetKernelArg");
+
+    enqueue_ndrange_kernel =
+        (stn_opencl_enqueue_ndrange_kernel_fn)
+        GetProcAddress(module, "clEnqueueNDRangeKernel");
+
+    enqueue_read_buffer =
+        (stn_opencl_enqueue_read_buffer_fn)
+        GetProcAddress(module, "clEnqueueReadBuffer");
+
+    finish =
+        (stn_opencl_finish_fn)
+        GetProcAddress(module, "clFinish");
+
+    if (get_platform_ids == NULL ||
+        get_device_ids == NULL ||
+        create_context == NULL ||
+        release_context == NULL ||
+        create_queue == NULL ||
+        release_queue == NULL ||
+        create_program == NULL ||
+        release_program == NULL ||
+        build_program == NULL ||
+        create_kernel == NULL ||
+        release_kernel == NULL ||
+        create_buffer == NULL ||
+        release_mem_object == NULL ||
+        set_kernel_arg == NULL ||
+        enqueue_ndrange_kernel == NULL ||
+        enqueue_read_buffer == NULL ||
+        finish == NULL) {
+        return;
+    }
+
+    platform_count =
+        (unsigned int)
+        provider->platform_count;
+
+    result =
+        get_platform_ids(
+            platform_count,
+            platforms,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    device = NULL;
+
+    for (i = 0u;
+         i < platform_count;
+         ++i) {
+
+        result =
+            get_device_ids(
+                platforms[i],
+                STN_OPENCL_DEVICE_TYPE_GPU,
+                1u,
+                &device,
+                NULL
+            );
+
+        if (result ==
+            STN_OPENCL_DEVICE_NOT_FOUND) {
+            continue;
+        }
+
+        if (result != 0 ||
+            device == NULL) {
+            return;
+        }
+
+        break;
+    }
+
+    if (device == NULL) {
+        return;
+    }
+
+    result = 0;
+
+    context =
+        create_context(
+            NULL,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            &result
+        );
+
+    if (context == NULL ||
+        result != 0) {
+        return;
+    }
+
+    result = 0;
+
+    queue =
+        create_queue(
+            context,
+            device,
+            0u,
+            &result
+        );
+
+    if (queue == NULL ||
+        result != 0) {
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    source = source_text;
+    result = 0;
+
+    program =
+        create_program(
+            context,
+            1u,
+            &source,
+            NULL,
+            &result
+        );
+
+    if (program == NULL ||
+        result != 0) {
+
+        (void) release_queue(
+            queue
+        );
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    build_result =
+        build_program(
+            program,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            NULL
+        );
+
+    if (build_result != 0) {
+
+        (void) release_program(
+            program
+        );
+
+        (void) release_queue(
+            queue
+        );
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    result = 0;
+
+    kernel =
+        create_kernel(
+            program,
+            "stn_qualify",
+            &result
+        );
+
+    if (kernel == NULL ||
+        result != 0) {
+
+        (void) release_program(
+            program
+        );
+
+        (void) release_queue(
+            queue
+        );
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    result = 0;
+
+    buffer =
+        create_buffer(
+            context,
+            STN_OPENCL_MEM_READ_WRITE,
+            sizeof(output),
+            NULL,
+            &result
+        );
+
+    if (buffer == NULL ||
+        result != 0) {
+
+        (void) release_kernel(
+            kernel
+        );
+
+        (void) release_program(
+            program
+        );
+
+        (void) release_queue(
+            queue
+        );
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    argument_result =
+        set_kernel_arg(
+            kernel,
+            0u,
+            sizeof(buffer),
+            &buffer
+        );
+
+    global_work_size = 1u;
+    enqueue_result = -1;
+    finish_result = -1;
+    read_result = -1;
+
+    memset(
+        output,
+        0,
+        sizeof(output)
+    );
+
+    if (argument_result == 0) {
+        enqueue_result =
+            enqueue_ndrange_kernel(
+                queue,
+                kernel,
+                1u,
+                NULL,
+                &global_work_size,
+                NULL,
+                0u,
+                NULL,
+                NULL
+            );
+    }
+
+    if (enqueue_result == 0) {
+        finish_result =
+            finish(
+                queue
+            );
+    }
+
+    if (finish_result == 0) {
+        read_result =
+            enqueue_read_buffer(
+                queue,
+                buffer,
+                STN_OPENCL_TRUE,
+                0u,
+                sizeof(output),
+                output,
+                0u,
+                NULL,
+                NULL
+            );
+    }
+
+    buffer_release_result =
+        release_mem_object(
+            buffer
+        );
+
+    kernel_release_result =
+        release_kernel(
+            kernel
+        );
+
+    program_release_result =
+        release_program(
+            program
+        );
+
+    queue_release_result =
+        release_queue(
+            queue
+        );
+
+    context_release_result =
+        release_context(
+            context
+        );
+
+    if (argument_result != 0 ||
+        enqueue_result != 0 ||
+        finish_result != 0 ||
+        read_result != 0 ||
+        memcmp(
+            output,
+            expected,
+            sizeof(expected)
+        ) != 0 ||
+        buffer_release_result != 0 ||
+        kernel_release_result != 0 ||
+        program_release_result != 0 ||
+        queue_release_result != 0 ||
+        context_release_result != 0) {
+        return;
+    }
+
+    provider->vector_ready = 1;
+}
+
 static void stn_compute_win32_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -3092,6 +3560,7 @@ static void stn_compute_win32_probe(
     provider->argument_ready = 0;
     provider->execution_ready = 0;
     provider->result_ready = 0;
+    provider->vector_ready = 0;
 
     if (type ==
         STN_COMPUTE_PROVIDER_OPENCL) {
@@ -3156,6 +3625,11 @@ static void stn_compute_win32_probe(
         );
 
         stn_compute_win32_qualify_opencl_result(
+            module,
+            provider
+        );
+
+        stn_compute_win32_qualify_opencl_vector(
             module,
             provider
         );
