@@ -177,13 +177,16 @@ static void stn_miner_detect_compute(void)
          ++i) {
 
         stn_log_write(
-            "COMPUTE_PROVIDER index=%u type=%s runtime=%s api_ready=%d",
+            "COMPUTE_PROVIDER index=%u type=%s runtime=%s api_ready=%d platform_ready=%d platform_count=%u",
             (unsigned int) i,
             stn_compute_provider_name(
                 inventory.providers[i].type
             ),
             inventory.providers[i].runtime,
-            inventory.providers[i].api_ready
+            inventory.providers[i].api_ready,
+            inventory.providers[i].platform_ready,
+            (unsigned int)
+                inventory.providers[i].platform_count
         );
     }
 }
