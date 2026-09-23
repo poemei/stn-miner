@@ -140,21 +140,26 @@ static void stn_miner_log_work_id(
     );
 }
 
-static void stn_miner_detect_compute(void)
+static void stn_miner_detect_compute(
+    stn_compute_inventory *inventory
+)
 {
-    stn_compute_inventory inventory;
     stn_compute_status status;
     size_t i;
 
+    if (inventory == NULL) {
+        return;
+    }
+
     memset(
-        &inventory,
+        inventory,
         0,
-        sizeof(inventory)
+        sizeof(*inventory)
     );
 
     status =
         stn_compute_detect(
-            &inventory
+            inventory
         );
 
     if (status != STN_COMPUTE_OK) {
@@ -169,46 +174,46 @@ static void stn_miner_detect_compute(void)
     stn_log_write(
         "COMPUTE_DETECT count=%u",
         (unsigned int)
-            inventory.count
+            inventory->count
     );
 
     for (i = 0u;
-         i < inventory.count;
+         i < inventory->count;
          ++i) {
 
         stn_log_write(
             "COMPUTE_PROVIDER index=%u type=%s runtime=%s api_ready=%d platform_ready=%d platform_count=%u device_query_ready=%d device_count=%u device_identity_ready=%d device_name=%s device_vendor=%s context_ready=%d queue_ready=%d buffer_ready=%d transfer_ready=%d program_ready=%d build_ready=%d kernel_ready=%d argument_ready=%d execution_ready=%d result_ready=%d vector_ready=%d sha256_ready=%d",
             (unsigned int) i,
             stn_compute_provider_name(
-                inventory.providers[i].type
+                inventory->providers[i].type
             ),
-            inventory.providers[i].runtime,
-            inventory.providers[i].api_ready,
-            inventory.providers[i].platform_ready,
+            inventory->providers[i].runtime,
+            inventory->providers[i].api_ready,
+            inventory->providers[i].platform_ready,
             (unsigned int)
-                inventory.providers[i].platform_count,
-            inventory.providers[i].device_query_ready,
+                inventory->providers[i].platform_count,
+            inventory->providers[i].device_query_ready,
             (unsigned int)
-                inventory.providers[i].device_count,
-            inventory.providers[i].device_identity_ready,
-            inventory.providers[i].device_name[0] != '\0'
-                ? inventory.providers[i].device_name
+                inventory->providers[i].device_count,
+            inventory->providers[i].device_identity_ready,
+            inventory->providers[i].device_name[0] != '\0'
+                ? inventory->providers[i].device_name
                 : "-",
-            inventory.providers[i].device_vendor[0] != '\0'
-                ? inventory.providers[i].device_vendor
+            inventory->providers[i].device_vendor[0] != '\0'
+                ? inventory->providers[i].device_vendor
                 : "-",
-            inventory.providers[i].context_ready,
-            inventory.providers[i].queue_ready,
-            inventory.providers[i].buffer_ready,
-            inventory.providers[i].transfer_ready,
-            inventory.providers[i].program_ready,
-            inventory.providers[i].build_ready,
-            inventory.providers[i].kernel_ready,
-            inventory.providers[i].argument_ready,
-            inventory.providers[i].execution_ready,
-            inventory.providers[i].result_ready,
-            inventory.providers[i].vector_ready,
-            inventory.providers[i].sha256_ready
+            inventory->providers[i].context_ready,
+            inventory->providers[i].queue_ready,
+            inventory->providers[i].buffer_ready,
+            inventory->providers[i].transfer_ready,
+            inventory->providers[i].program_ready,
+            inventory->providers[i].build_ready,
+            inventory->providers[i].kernel_ready,
+            inventory->providers[i].argument_ready,
+            inventory->providers[i].execution_ready,
+            inventory->providers[i].result_ready,
+            inventory->providers[i].vector_ready,
+            inventory->providers[i].sha256_ready
         );
     }
 }
@@ -834,6 +839,7 @@ stn_miner_status stn_miner_run(
     stn_backend_status backend_status;
     stn_backend_type candidate_type;
     stn_gpu_inventory gpu_inventory;
+    stn_compute_inventory compute_inventory;
     stn_display_state display;
 
     if (config == NULL ||
@@ -842,31 +848,6 @@ stn_miner_status stn_miner_run(
         config->stratum_port == 0u) {
         return STN_MINER_INVALID_ARGUMENT;
     }
-
-    backend_status =
-        stn_backend_select(
-            &backend
-        );
-
-    if (backend_status !=
-        STN_BACKEND_OK) {
-
-        stn_log_write(
-            "BACKEND_SELECT_FAILED status=%d",
-            (int) backend_status
-        );
-
-        return STN_MINER_ERROR;
-    }
-
-    stn_log_write(
-        "START address=%s stratum=%s:%u backend=%s",
-        config->address,
-        config->stratum_host,
-        (unsigned int)
-            config->stratum_port,
-        backend.name
-    );
 
     platform_status =
         stn_platform_init();
@@ -882,6 +863,37 @@ stn_miner_status stn_miner_run(
 
     stn_log_write(
         "PLATFORM_INIT_OK"
+    );
+
+    stn_miner_detect_compute(
+        &compute_inventory
+    );
+
+    backend_status =
+        stn_backend_select(
+            &backend,
+            &compute_inventory
+        );
+
+    if (backend_status !=
+        STN_BACKEND_OK) {
+
+        stn_log_write(
+            "BACKEND_SELECT_FAILED status=%d",
+            (int) backend_status
+        );
+
+        stn_platform_shutdown();
+        return STN_MINER_ERROR;
+    }
+
+    stn_log_write(
+        "START address=%s stratum=%s:%u backend=%s",
+        config->address,
+        config->stratum_host,
+        (unsigned int)
+            config->stratum_port,
+        backend.name
     );
 
     stn_display_init(
@@ -907,8 +919,6 @@ stn_miner_status stn_miner_run(
         ),
         backend.name
     );
-
-    stn_miner_detect_compute();
 
     stn_display_set_status(
         &display,
