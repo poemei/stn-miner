@@ -1,12 +1,36 @@
 #include "stn_backend.h"
 #include "stn_cpu.h"
+#include "stn_gpu_backend.h"
 
 stn_backend_status stn_backend_select(
-    stn_backend *backend
+    stn_backend *backend,
+    const stn_compute_inventory *compute_inventory
 )
 {
+    stn_gpu_backend_status gpu_status;
+
     if (backend == NULL) {
         return STN_BACKEND_INVALID_ARGUMENT;
+    }
+
+    if (stn_gpu_backend_available(
+            compute_inventory
+        )) {
+
+        gpu_status =
+            stn_gpu_backend_prepare();
+
+        if (gpu_status ==
+            STN_GPU_BACKEND_OK) {
+
+            backend->type =
+                STN_BACKEND_TYPE_GPU;
+
+            backend->name =
+                "GPU";
+
+            return STN_BACKEND_OK;
+        }
     }
 
     backend->type =
@@ -27,6 +51,7 @@ stn_backend_status stn_backend_search(
 )
 {
     stn_cpu_status cpu_status;
+    stn_gpu_backend_status gpu_status;
 
     if (backend == NULL ||
         job == NULL ||
@@ -57,6 +82,36 @@ stn_backend_status stn_backend_search(
             return STN_BACKEND_ERROR;
 
         case STN_BACKEND_TYPE_GPU:
+            gpu_status =
+                stn_gpu_backend_search(
+                    job,
+                    nonce_start,
+                    nonce_end,
+                    solution
+                );
+
+            if (gpu_status ==
+                STN_GPU_BACKEND_OK) {
+                return STN_BACKEND_OK;
+            }
+
+            if (gpu_status ==
+                STN_GPU_BACKEND_NO_SOLUTION) {
+                return STN_BACKEND_NO_SOLUTION;
+            }
+
+            if (gpu_status ==
+                STN_GPU_BACKEND_UNAVAILABLE) {
+                return STN_BACKEND_UNAVAILABLE;
+            }
+
+            if (gpu_status ==
+                STN_GPU_BACKEND_INVALID_ARGUMENT) {
+                return STN_BACKEND_INVALID_ARGUMENT;
+            }
+
+            return STN_BACKEND_ERROR;
+
         case STN_BACKEND_TYPE_USB_ASIC:
         case STN_BACKEND_TYPE_ASIC:
         case STN_BACKEND_TYPE_NONE:
