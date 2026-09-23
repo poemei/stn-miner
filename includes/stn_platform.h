@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define STN_PLATFORM_PATH_MAX 1024u
+
 typedef struct stn_socket {
     uintptr_t handle;
 } stn_socket;
@@ -21,6 +23,12 @@ typedef enum stn_platform_status {
 } stn_platform_status;
 
 stn_platform_status stn_platform_init(void);
+
+stn_platform_status stn_platform_executable_path(
+    const char *filename,
+    char *output,
+    size_t output_size
+);
 
 void stn_platform_shutdown(void);
 
