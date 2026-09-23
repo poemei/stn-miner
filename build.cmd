@@ -7,6 +7,7 @@ cl /nologo /std:c17 /W4 /O2 ^
     /I includes ^
     src\main.c ^
     src\stn_config.c ^
+    src\stn_backend.c ^
     src\stn_display.c ^
     src\stn_gpu.c ^
     src\stn_log.c ^
