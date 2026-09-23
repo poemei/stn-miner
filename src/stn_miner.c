@@ -177,7 +177,7 @@ static void stn_miner_detect_compute(void)
          ++i) {
 
         stn_log_write(
-            "COMPUTE_PROVIDER index=%u type=%s runtime=%s api_ready=%d platform_ready=%d platform_count=%u device_query_ready=%d device_count=%u device_identity_ready=%d device_name=%s device_vendor=%s context_ready=%d queue_ready=%d buffer_ready=%d transfer_ready=%d program_ready=%d build_ready=%d kernel_ready=%d argument_ready=%d",
+            "COMPUTE_PROVIDER index=%u type=%s runtime=%s api_ready=%d platform_ready=%d platform_count=%u device_query_ready=%d device_count=%u device_identity_ready=%d device_name=%s device_vendor=%s context_ready=%d queue_ready=%d buffer_ready=%d transfer_ready=%d program_ready=%d build_ready=%d kernel_ready=%d argument_ready=%d execution_ready=%d",
             (unsigned int) i,
             stn_compute_provider_name(
                 inventory.providers[i].type
@@ -204,7 +204,8 @@ static void stn_miner_detect_compute(void)
             inventory.providers[i].program_ready,
             inventory.providers[i].build_ready,
             inventory.providers[i].kernel_ready,
-            inventory.providers[i].argument_ready
+            inventory.providers[i].argument_ready,
+            inventory.providers[i].execution_ready
         );
     }
 }
