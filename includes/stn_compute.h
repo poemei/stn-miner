@@ -36,6 +36,7 @@ typedef struct stn_compute_provider {
     int queue_ready;
     int buffer_ready;
     int transfer_ready;
+    int program_ready;
 } stn_compute_provider;
 
 typedef struct stn_compute_inventory {
