@@ -183,6 +183,15 @@ typedef int (*stn_opencl_release_program_fn)(
     void *
 );
 
+typedef int (*stn_opencl_build_program_fn)(
+    void *,
+    unsigned int,
+    void * const *,
+    const char *,
+    void *,
+    void *
+);
+
 #define STN_OPENCL_DEVICE_TYPE_GPU (1ull << 2)
 #define STN_OPENCL_DEVICE_NOT_FOUND (-1)
 #define STN_OPENCL_MAX_PLATFORMS 16u
@@ -1400,6 +1409,196 @@ static void stn_compute_linux_qualify_opencl_program(
     provider->program_ready = 1;
 }
 
+static void stn_compute_linux_qualify_opencl_build(
+    void * module,
+    stn_compute_provider *provider
+)
+{
+    static const char source_text[] =
+        "__kernel void stn_qualify(void) { }";
+
+    const char *source;
+
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    stn_opencl_get_device_ids_fn get_device_ids;
+    stn_opencl_create_context_fn create_context;
+    stn_opencl_release_context_fn release_context;
+    stn_opencl_create_program_with_source_fn create_program;
+    stn_opencl_release_program_fn release_program;
+    stn_opencl_build_program_fn build_program;
+    void *platforms[STN_OPENCL_MAX_PLATFORMS];
+    void *device;
+    void *context;
+    void *program;
+    unsigned int platform_count;
+    unsigned int i;
+    int result;
+    int build_result;
+    int program_release_result;
+    int context_release_result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->program_ready ||
+        provider->platform_count == 0u ||
+        provider->platform_count >
+            STN_OPENCL_MAX_PLATFORMS) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        dlsym(module, "clGetPlatformIDs");
+
+    get_device_ids =
+        (stn_opencl_get_device_ids_fn)
+        dlsym(module, "clGetDeviceIDs");
+
+    create_context =
+        (stn_opencl_create_context_fn)
+        dlsym(module, "clCreateContext");
+
+    release_context =
+        (stn_opencl_release_context_fn)
+        dlsym(module, "clReleaseContext");
+
+    create_program =
+        (stn_opencl_create_program_with_source_fn)
+        dlsym(module, "clCreateProgramWithSource");
+
+    release_program =
+        (stn_opencl_release_program_fn)
+        dlsym(module, "clReleaseProgram");
+
+    build_program =
+        (stn_opencl_build_program_fn)
+        dlsym(module, "clBuildProgram");
+
+    if (get_platform_ids == NULL ||
+        get_device_ids == NULL ||
+        create_context == NULL ||
+        release_context == NULL ||
+        create_program == NULL ||
+        release_program == NULL ||
+        build_program == NULL) {
+        return;
+    }
+
+    platform_count =
+        (unsigned int)
+        provider->platform_count;
+
+    result =
+        get_platform_ids(
+            platform_count,
+            platforms,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    device = NULL;
+
+    for (i = 0u;
+         i < platform_count;
+         ++i) {
+
+        result =
+            get_device_ids(
+                platforms[i],
+                STN_OPENCL_DEVICE_TYPE_GPU,
+                1u,
+                &device,
+                NULL
+            );
+
+        if (result ==
+            STN_OPENCL_DEVICE_NOT_FOUND) {
+            continue;
+        }
+
+        if (result != 0 ||
+            device == NULL) {
+            return;
+        }
+
+        break;
+    }
+
+    if (device == NULL) {
+        return;
+    }
+
+    result = 0;
+
+    context =
+        create_context(
+            NULL,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            &result
+        );
+
+    if (context == NULL ||
+        result != 0) {
+        return;
+    }
+
+    source = source_text;
+    result = 0;
+
+    program =
+        create_program(
+            context,
+            1u,
+            &source,
+            NULL,
+            &result
+        );
+
+    if (program == NULL ||
+        result != 0) {
+
+        (void) release_context(
+            context
+        );
+
+        return;
+    }
+
+    build_result =
+        build_program(
+            program,
+            1u,
+            &device,
+            NULL,
+            NULL,
+            NULL
+        );
+
+    program_release_result =
+        release_program(
+            program
+        );
+
+    context_release_result =
+        release_context(
+            context
+        );
+
+    if (build_result != 0 ||
+        program_release_result != 0 ||
+        context_release_result != 0) {
+        return;
+    }
+
+    provider->build_ready = 1;
+}
+
 static void stn_compute_linux_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -1450,6 +1649,7 @@ static void stn_compute_linux_probe(
     provider->buffer_ready = 0;
     provider->transfer_ready = 0;
     provider->program_ready = 0;
+    provider->build_ready = 0;
 
     if (type ==
         STN_COMPUTE_PROVIDER_OPENCL) {
@@ -1489,6 +1689,11 @@ static void stn_compute_linux_probe(
         );
 
         stn_compute_linux_qualify_opencl_program(
+            module,
+            provider
+        );
+
+        stn_compute_linux_qualify_opencl_build(
             module,
             provider
         );
