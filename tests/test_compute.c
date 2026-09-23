@@ -26,6 +26,15 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[0].platform_count = 2u;
     inventory->providers[0].device_query_ready = 1;
     inventory->providers[0].device_count = 1u;
+    inventory->providers[0].device_identity_ready = 1;
+    (void) strcpy(
+        inventory->providers[0].device_name,
+        "Test GPU"
+    );
+    (void) strcpy(
+        inventory->providers[0].device_vendor,
+        "Test Vendor"
+    );
 
     inventory->providers[1].type =
         STN_COMPUTE_PROVIDER_VULKAN;
@@ -38,6 +47,9 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[1].platform_count = 0u;
     inventory->providers[1].device_query_ready = 0;
     inventory->providers[1].device_count = 0u;
+    inventory->providers[1].device_identity_ready = 0;
+    inventory->providers[1].device_name[0] = '\0';
+    inventory->providers[1].device_vendor[0] = '\0';
 
     return STN_COMPUTE_OK;
 }
@@ -121,6 +133,27 @@ int main(void)
     check(
         inventory.providers[0].device_count == 1u,
         "OpenCL GPU device count preserved"
+    );
+
+    check(
+        inventory.providers[0].device_identity_ready == 1,
+        "OpenCL device identity readiness preserved"
+    );
+
+    check(
+        strcmp(
+            inventory.providers[0].device_name,
+            "Test GPU"
+        ) == 0,
+        "OpenCL device name preserved"
+    );
+
+    check(
+        strcmp(
+            inventory.providers[0].device_vendor,
+            "Test Vendor"
+        ) == 0,
+        "OpenCL device vendor preserved"
     );
 
     check(
