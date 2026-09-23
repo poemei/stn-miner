@@ -1648,6 +1648,10 @@ stn_miner_status stn_miner_run(
                             solution.nonce
                     );
 
+                    stn_display_add_share(
+                        &display
+                    );
+
                     stn_display_set_status(
                         &display,
                         "Waiting for job"
