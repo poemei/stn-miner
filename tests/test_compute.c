@@ -24,6 +24,8 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[0].api_ready = 1;
     inventory->providers[0].platform_ready = 1;
     inventory->providers[0].platform_count = 2u;
+    inventory->providers[0].device_query_ready = 1;
+    inventory->providers[0].device_count = 1u;
 
     inventory->providers[1].type =
         STN_COMPUTE_PROVIDER_VULKAN;
@@ -34,6 +36,8 @@ stn_compute_status stn_compute_platform_detect(
     inventory->providers[1].api_ready = 0;
     inventory->providers[1].platform_ready = 0;
     inventory->providers[1].platform_count = 0u;
+    inventory->providers[1].device_query_ready = 0;
+    inventory->providers[1].device_count = 0u;
 
     return STN_COMPUTE_OK;
 }
@@ -107,6 +111,16 @@ int main(void)
     check(
         inventory.providers[0].platform_count == 2u,
         "OpenCL platform count preserved"
+    );
+
+    check(
+        inventory.providers[0].device_query_ready == 1,
+        "OpenCL device query readiness preserved"
+    );
+
+    check(
+        inventory.providers[0].device_count == 1u,
+        "OpenCL GPU device count preserved"
     );
 
     check(
