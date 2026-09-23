@@ -101,9 +101,19 @@ typedef int (__stdcall *stn_opencl_get_device_ids_fn)(
     unsigned int *
 );
 
+typedef int (__stdcall *stn_opencl_get_device_info_fn)(
+    void *,
+    unsigned int,
+    size_t,
+    void *,
+    size_t *
+);
+
 #define STN_OPENCL_DEVICE_TYPE_GPU (1ull << 2)
 #define STN_OPENCL_DEVICE_NOT_FOUND (-1)
 #define STN_OPENCL_MAX_PLATFORMS 16u
+#define STN_OPENCL_DEVICE_NAME 0x102bu
+#define STN_OPENCL_DEVICE_VENDOR 0x102cu
 
 static void stn_compute_win32_qualify_opencl_platforms(
     HMODULE module,
@@ -238,6 +248,133 @@ static void stn_compute_win32_qualify_opencl_devices(
         total_gpu_count;
 }
 
+static void stn_compute_win32_qualify_opencl_identity(
+    HMODULE module,
+    stn_compute_provider *provider
+)
+{
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    stn_opencl_get_device_ids_fn get_device_ids;
+    stn_opencl_get_device_info_fn get_device_info;
+    void *platforms[STN_OPENCL_MAX_PLATFORMS];
+    void *device;
+    unsigned int platform_count;
+    unsigned int i;
+    int result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->device_query_ready ||
+        provider->device_count == 0u ||
+        provider->platform_count == 0u ||
+        provider->platform_count >
+            STN_OPENCL_MAX_PLATFORMS) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        GetProcAddress(module, "clGetPlatformIDs");
+
+    get_device_ids =
+        (stn_opencl_get_device_ids_fn)
+        GetProcAddress(module, "clGetDeviceIDs");
+
+    get_device_info =
+        (stn_opencl_get_device_info_fn)
+        GetProcAddress(module, "clGetDeviceInfo");
+
+    if (get_platform_ids == NULL ||
+        get_device_ids == NULL ||
+        get_device_info == NULL) {
+        return;
+    }
+
+    platform_count =
+        (unsigned int)
+        provider->platform_count;
+
+    result =
+        get_platform_ids(
+            platform_count,
+            platforms,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    device = NULL;
+
+    for (i = 0u;
+         i < platform_count;
+         ++i) {
+
+        result =
+            get_device_ids(
+                platforms[i],
+                STN_OPENCL_DEVICE_TYPE_GPU,
+                1u,
+                &device,
+                NULL
+            );
+
+        if (result ==
+            STN_OPENCL_DEVICE_NOT_FOUND) {
+            continue;
+        }
+
+        if (result != 0 ||
+            device == NULL) {
+            return;
+        }
+
+        break;
+    }
+
+    if (device == NULL) {
+        return;
+    }
+
+    result =
+        get_device_info(
+            device,
+            STN_OPENCL_DEVICE_NAME,
+            sizeof(provider->device_name),
+            provider->device_name,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    provider->device_name[
+        sizeof(provider->device_name) - 1u
+    ] = '\0';
+
+    result =
+        get_device_info(
+            device,
+            STN_OPENCL_DEVICE_VENDOR,
+            sizeof(provider->device_vendor),
+            provider->device_vendor,
+            NULL
+        );
+
+    if (result != 0) {
+        provider->device_vendor[0] = '\0';
+        return;
+    }
+
+    provider->device_vendor[
+        sizeof(provider->device_vendor) - 1u
+    ] = '\0';
+
+    provider->device_identity_ready = 1;
+}
+
 static void stn_compute_win32_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -279,6 +416,9 @@ static void stn_compute_win32_probe(
     provider->platform_count = 0u;
     provider->device_query_ready = 0;
     provider->device_count = 0u;
+    provider->device_identity_ready = 0;
+    provider->device_name[0] = '\0';
+    provider->device_vendor[0] = '\0';
 
     if (type ==
         STN_COMPUTE_PROVIDER_OPENCL) {
@@ -288,6 +428,11 @@ static void stn_compute_win32_probe(
         );
 
         stn_compute_win32_qualify_opencl_devices(
+            module,
+            provider
+        );
+
+        stn_compute_win32_qualify_opencl_identity(
             module,
             provider
         );
