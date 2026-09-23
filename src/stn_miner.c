@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "stn_backend.h"
+#include "stn_compute.h"
 #include "stn_cpu.h"
 #include "stn_display.h"
 #include "stn_gpu.h"
@@ -137,6 +138,53 @@ static void stn_miner_log_work_id(
         prefix,
         text
     );
+}
+
+static void stn_miner_detect_compute(void)
+{
+    stn_compute_inventory inventory;
+    stn_compute_status status;
+    size_t i;
+
+    memset(
+        &inventory,
+        0,
+        sizeof(inventory)
+    );
+
+    status =
+        stn_compute_detect(
+            &inventory
+        );
+
+    if (status != STN_COMPUTE_OK) {
+        stn_log_write(
+            "COMPUTE_DETECT_FAILED status=%d",
+            (int) status
+        );
+
+        return;
+    }
+
+    stn_log_write(
+        "COMPUTE_DETECT count=%u",
+        (unsigned int)
+            inventory.count
+    );
+
+    for (i = 0u;
+         i < inventory.count;
+         ++i) {
+
+        stn_log_write(
+            "COMPUTE_PROVIDER index=%u type=%s runtime=%s",
+            (unsigned int) i,
+            stn_compute_provider_name(
+                inventory.providers[i].type
+            ),
+            inventory.providers[i].runtime
+        );
+    }
 }
 
 static void stn_miner_detect_gpu(
@@ -833,6 +881,8 @@ stn_miner_status stn_miner_run(
         ),
         backend.name
     );
+
+    stn_miner_detect_compute();
 
     stn_display_set_status(
         &display,
