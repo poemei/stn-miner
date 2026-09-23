@@ -88,6 +88,18 @@ typedef int (*stn_opencl_get_platform_ids_fn)(
     unsigned int *
 );
 
+typedef int (*stn_opencl_get_device_ids_fn)(
+    void *,
+    unsigned long long,
+    unsigned int,
+    void **,
+    unsigned int *
+);
+
+#define STN_OPENCL_DEVICE_TYPE_GPU (1ull << 2)
+#define STN_OPENCL_DEVICE_NOT_FOUND (-1)
+#define STN_OPENCL_MAX_PLATFORMS 16u
+
 static void stn_compute_linux_qualify_opencl_platforms(
     void *module,
     stn_compute_provider *provider
@@ -134,6 +146,93 @@ static void stn_compute_linux_qualify_opencl_platforms(
         platform_count > 0u ? 1 : 0;
 }
 
+
+static void stn_compute_linux_qualify_opencl_devices(
+    void * module,
+    stn_compute_provider *provider
+)
+{
+    stn_opencl_get_platform_ids_fn get_platform_ids;
+    stn_opencl_get_device_ids_fn get_device_ids;
+    void *platforms[STN_OPENCL_MAX_PLATFORMS];
+    unsigned int platform_count;
+    unsigned int gpu_count;
+    size_t total_gpu_count;
+    unsigned int i;
+    int result;
+
+    if (module == NULL ||
+        provider == NULL ||
+        !provider->platform_ready ||
+        provider->platform_count == 0u ||
+        provider->platform_count >
+            STN_OPENCL_MAX_PLATFORMS) {
+        return;
+    }
+
+    get_platform_ids =
+        (stn_opencl_get_platform_ids_fn)
+        dlsym(module, "clGetPlatformIDs");
+
+    get_device_ids =
+        (stn_opencl_get_device_ids_fn)
+        dlsym(module, "clGetDeviceIDs");
+
+    if (get_platform_ids == NULL ||
+        get_device_ids == NULL) {
+        return;
+    }
+
+    platform_count =
+        (unsigned int)
+        provider->platform_count;
+
+    result =
+        get_platform_ids(
+            platform_count,
+            platforms,
+            NULL
+        );
+
+    if (result != 0) {
+        return;
+    }
+
+    total_gpu_count = 0u;
+
+    for (i = 0u;
+         i < platform_count;
+         ++i) {
+
+        gpu_count = 0u;
+
+        result =
+            get_device_ids(
+                platforms[i],
+                STN_OPENCL_DEVICE_TYPE_GPU,
+                0u,
+                NULL,
+                &gpu_count
+            );
+
+        if (result ==
+            STN_OPENCL_DEVICE_NOT_FOUND) {
+            continue;
+        }
+
+        if (result != 0) {
+            return;
+        }
+
+        total_gpu_count +=
+            (size_t) gpu_count;
+    }
+
+    provider->device_query_ready = 1;
+    provider->device_count =
+        total_gpu_count;
+}
+
 static void stn_compute_linux_probe(
     stn_compute_inventory *inventory,
     stn_compute_provider_type type,
@@ -174,10 +273,17 @@ static void stn_compute_linux_probe(
 
     provider->platform_ready = 0;
     provider->platform_count = 0u;
+    provider->device_query_ready = 0;
+    provider->device_count = 0u;
 
     if (type ==
         STN_COMPUTE_PROVIDER_OPENCL) {
         stn_compute_linux_qualify_opencl_platforms(
+            module,
+            provider
+        );
+
+        stn_compute_linux_qualify_opencl_devices(
             module,
             provider
         );
