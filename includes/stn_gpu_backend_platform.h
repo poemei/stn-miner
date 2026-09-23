@@ -11,7 +11,6 @@ stn_gpu_backend_status stn_gpu_backend_platform_prepare(
 
 stn_gpu_backend_status stn_gpu_backend_platform_search(
     const stn_miner_job *job,
-    const uint8_t midstate[32],
     uint64_t nonce_start,
     uint64_t nonce_end,
     stn_miner_solution *solution
