@@ -207,6 +207,7 @@ void stn_display_init(
 
     state->nonce = 0u;
     state->hashes_completed = 0u;
+    state->total_shares = 0u;
     state->job_count = 0u;
 }
 
@@ -365,6 +366,19 @@ void stn_display_set_result(
     );
 }
 
+void stn_display_add_share(
+    stn_display_state *state
+)
+{
+    if (state == NULL) {
+        return;
+    }
+
+    if (state->total_shares != UINT64_MAX) {
+        ++state->total_shares;
+    }
+}
+
 void stn_display_render(
     const stn_display_state *state
 )
@@ -421,6 +435,12 @@ void stn_display_render(
         "Hashes  : %llu\n",
         (unsigned long long)
             state->hashes_completed
+    );
+
+    printf(
+        "Shares  : %llu\n",
+        (unsigned long long)
+            state->total_shares
     );
 
     printf(
