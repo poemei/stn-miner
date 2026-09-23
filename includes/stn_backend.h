@@ -3,8 +3,9 @@
 
 #include <stdint.h>
 
-#include "stn_miner.h"
+#include "stn_compute.h"
 #include "stn_gpu.h"
+#include "stn_miner.h"
 
 typedef enum stn_backend_type {
     STN_BACKEND_TYPE_NONE = 0,
@@ -28,7 +29,8 @@ typedef struct stn_backend {
 } stn_backend;
 
 stn_backend_status stn_backend_select(
-    stn_backend *backend
+    stn_backend *backend,
+    const stn_compute_inventory *compute_inventory
 );
 
 stn_backend_status stn_backend_search(
