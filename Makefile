@@ -11,6 +11,7 @@ SOURCES = \
 	src/stn_config.c \
 	src/stn_compute.c \
 	src/stn_backend.c \
+	src/stn_gpu_backend.c \
 	src/stn_display.c \
 	src/stn_gpu.c \
 	src/stn_log.c \
@@ -19,6 +20,7 @@ SOURCES = \
 	src/stn_hash.c \
 	src/stn_cpu.c \
 	platforms/linux/stn_compute_linux.c \
+	platforms/linux/stn_gpu_backend_linux.c \
 	platforms/linux/stn_gpu_linux.c \
 	platforms/linux/stn_platform_linux.c
 
