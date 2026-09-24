@@ -934,6 +934,15 @@ stn_miner_status stn_miner_run(
         stn_socket socket;
         stn_miner_status address_status;
 
+        /*
+         * Clear session-visible work before opening a new transport.  A
+         * reconnect must never display the previous session's Job/Nonce/
+         * Hashes beside the transient Connecting state.
+         */
+        stn_display_clear_job(
+            &display
+        );
+
         stn_display_set_status(
             &display,
             "Connecting"
