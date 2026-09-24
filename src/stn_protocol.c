@@ -104,7 +104,13 @@ stn_protocol_status stn_protocol_parse_job_header(
 
     memcpy(
         job->target,
-        &header[40],
+        &header[STNM_JOB_SHARE_TARGET_OFFSET],
+        STNM_TARGET_SIZE
+    );
+
+    memcpy(
+        job->chain_target,
+        &header[STNM_JOB_CHAIN_TARGET_OFFSET],
         STNM_TARGET_SIZE
     );
 
