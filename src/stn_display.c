@@ -294,6 +294,24 @@ void stn_display_set_job(
     );
 }
 
+void stn_display_clear_job(
+    stn_display_state *state
+)
+{
+    if (state == NULL) {
+        return;
+    }
+
+    stn_display_copy_text(
+        state->current_job,
+        sizeof(state->current_job),
+        "-"
+    );
+
+    state->nonce = 0u;
+    state->hashes_completed = 0u;
+}
+
 void stn_display_set_nonce(
     stn_display_state *state,
     uint64_t nonce
