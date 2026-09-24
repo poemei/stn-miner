@@ -1652,21 +1652,45 @@ stn_miner_status stn_miner_run(
                         &display
                     );
 
-                    stn_display_set_status(
-                        &display,
-                        "Waiting for job"
-                    );
-
                     stn_display_set_result(
                         &display,
                         "Accepted"
+                    );
+
+                    /*
+                     * Phase 19 qualifying-share acceptance does not consume
+                     * the active Work ID. Continue from the next nonce until
+                     * Stratum explicitly replaces or stales the job.
+                     */
+                    if (solution.nonce == UINT64_MAX) {
+                        stn_display_set_status(
+                            &display,
+                            "Waiting for job"
+                        );
+                        stn_display_render(
+                            &display
+                        );
+                        break;
+                    }
+
+                    nonce_start =
+                        solution.nonce + 1u;
+
+                    stn_display_set_nonce(
+                        &display,
+                        nonce_start
+                    );
+
+                    stn_display_set_status(
+                        &display,
+                        "Mining"
                     );
 
                     stn_display_render(
                         &display
                     );
 
-                    break;
+                    continue;
                 }
 
                 if (result ==
