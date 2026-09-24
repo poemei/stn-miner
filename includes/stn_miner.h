@@ -13,7 +13,7 @@
 #define STNM_MAGIC_SIZE 4u
 #define STNM_WORK_ID_SIZE 32u
 #define STNM_TARGET_SIZE 32u
-#define STNM_JOB_HEADER_SIZE 84u
+#define STNM_JOB_HEADER_SIZE 116u
 #define STNM_SUBMIT_SIZE 48u
 #define STNM_RESULT_SIZE 12u
 #define STNM_HASH_PROGRESS_SIZE 56u
@@ -53,6 +53,7 @@ typedef struct stn_miner_config {
 typedef struct stn_miner_job {
     uint8_t work_id[STNM_WORK_ID_SIZE];
     uint8_t target[STNM_TARGET_SIZE];
+    uint8_t chain_target[STNM_TARGET_SIZE];
 
     uint8_t *block;
     uint32_t block_length;
