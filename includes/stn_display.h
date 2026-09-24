@@ -59,6 +59,10 @@ void stn_display_set_job(
     const uint8_t work_id[STNM_WORK_ID_SIZE]
 );
 
+void stn_display_clear_job(
+    stn_display_state *state
+);
+
 void stn_display_set_nonce(
     stn_display_state *state,
     uint64_t nonce
