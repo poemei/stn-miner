@@ -625,7 +625,7 @@ static stn_miner_status stn_miner_receive_job(
     }
 
     if (memcmp(
-            job->target,
+            job->chain_target,
             &job->block[
                 STNM_BLOCK_TARGET_OFFSET
             ],
@@ -633,7 +633,7 @@ static stn_miner_status stn_miner_receive_job(
         ) != 0) {
 
         stn_log_write(
-            "RX JOB_TARGET_MISMATCH"
+            "RX JOB_CHAIN_TARGET_MISMATCH"
         );
 
         stn_miner_job_clear(
