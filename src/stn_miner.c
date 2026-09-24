@@ -990,6 +990,20 @@ stn_miner_status stn_miner_run(
             "CONNECT_OK"
         );
 
+        /*
+         * The transport is established at this point.  Do not leave the
+         * display carrying the outer-loop "Connecting" state while the live
+         * session registers its identity and receives work.
+         */
+        stn_display_set_status(
+            &display,
+            "Connected"
+        );
+
+        stn_display_render(
+            &display
+        );
+
         stn_display_set_status(
             &display,
             "Registering address"
