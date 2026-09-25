@@ -933,6 +933,7 @@ stn_miner_status stn_miner_run(
     for (;;) {
         stn_socket socket;
         stn_miner_status address_status;
+        int replacement_pending;
 
         /*
          * Clear session-visible work before opening a new transport.  A
@@ -1070,6 +1071,8 @@ stn_miner_status stn_miner_run(
             config->address
         );
 
+        replacement_pending = 0;
+
         stn_display_set_status(
             &display,
             "Waiting for job"
@@ -1141,6 +1144,25 @@ stn_miner_status stn_miner_run(
                 );
 
                 break;
+            }
+
+            /*
+             * Socket readability only proves transport data is available.
+             * Confirm a complete, valid JOB before recording the previous
+             * work item as Replaced.  EOF or malformed inbound data must not
+             * be reported as legitimate replacement work.
+             */
+            if (replacement_pending) {
+                stn_log_write(
+                    "RX JOB_REPLACEMENT_CONFIRMED"
+                );
+
+                stn_display_set_result(
+                    &display,
+                    "Replaced"
+                );
+
+                replacement_pending = 0;
             }
 
             stn_display_set_job(
@@ -1236,10 +1258,7 @@ stn_miner_status stn_miner_run(
                         "RX JOB_PENDING while_mining=1"
                     );
 
-                    stn_display_set_result(
-                        &display,
-                        "Replaced"
-                    );
+                    replacement_pending = 1;
 
                     stn_display_set_status(
                         &display,
@@ -1567,10 +1586,7 @@ stn_miner_status stn_miner_run(
                         "RX JOB_PENDING before_submit=1"
                     );
 
-                    stn_display_set_result(
-                        &display,
-                        "Replaced"
-                    );
+                    replacement_pending = 1;
 
                     stn_display_set_status(
                         &display,
