@@ -1421,10 +1421,7 @@ stn_miner_status stn_miner_run(
                             "RX JOB_PENDING after_chunk=1"
                         );
 
-                        stn_display_set_result(
-                            &display,
-                            "Replaced"
-                        );
+                        replacement_pending = 1;
 
                         stn_display_set_status(
                             &display,
