@@ -684,6 +684,64 @@ static stn_miner_status stn_miner_receive_job(
     return STN_MINER_OK;
 }
 
+static stn_miner_status stn_miner_receive_pending_job(
+    stn_socket *socket,
+    const stn_miner_job *current_job,
+    stn_miner_job *incoming_job,
+    int *same_work
+)
+{
+    stn_miner_status status;
+
+    if (socket == NULL ||
+        current_job == NULL ||
+        incoming_job == NULL ||
+        same_work == NULL) {
+        return STN_MINER_INVALID_ARGUMENT;
+    }
+
+    memset(
+        incoming_job,
+        0,
+        sizeof(*incoming_job)
+    );
+
+    status =
+        stn_miner_receive_job(
+            socket,
+            incoming_job
+        );
+
+    if (status != STN_MINER_OK) {
+        return status;
+    }
+
+    *same_work =
+        memcmp(
+            incoming_job->work_id,
+            current_job->work_id,
+            STNM_WORK_ID_SIZE
+        ) == 0;
+
+    if (*same_work) {
+        stn_log_write(
+            "RX JOB_DUPLICATE ignored=1"
+        );
+    } else {
+        stn_miner_log_work_id(
+            "RX JOB_REPLACED_OLD",
+            current_job->work_id
+        );
+
+        stn_miner_log_work_id(
+            "RX JOB_REPLACEMENT_NEW",
+            incoming_job->work_id
+        );
+    }
+
+    return STN_MINER_OK;
+}
+
 static stn_miner_status stn_miner_submit_solution(
     stn_socket *socket,
     const stn_miner_solution *solution,
@@ -933,7 +991,16 @@ stn_miner_status stn_miner_run(
     for (;;) {
         stn_socket socket;
         stn_miner_status address_status;
-        int replacement_pending;
+        stn_miner_job pending_job;
+        int have_pending_job;
+
+        memset(
+            &pending_job,
+            0,
+            sizeof(pending_job)
+        );
+
+        have_pending_job = 0;
 
         /*
          * Clear session-visible work before opening a new transport.  A
@@ -1071,8 +1138,6 @@ stn_miner_status stn_miner_run(
             config->address
         );
 
-        replacement_pending = 0;
-
         stn_display_set_status(
             &display,
             "Waiting for job"
@@ -1109,15 +1174,34 @@ stn_miner_status stn_miner_run(
                 sizeof(solution)
             );
 
-            stn_log_write(
-                "RX WAIT_JOB"
-            );
+            if (have_pending_job) {
+                job = pending_job;
 
-            status =
-                stn_miner_receive_job(
-                    &socket,
-                    &job
+                memset(
+                    &pending_job,
+                    0,
+                    sizeof(pending_job)
                 );
+
+                have_pending_job = 0;
+
+                stn_log_write(
+                    "RX JOB_PENDING_CONSUMED"
+                );
+
+                status =
+                    STN_MINER_OK;
+            } else {
+                stn_log_write(
+                    "RX WAIT_JOB"
+                );
+
+                status =
+                    stn_miner_receive_job(
+                        &socket,
+                        &job
+                    );
+            }
 
             if (status != STN_MINER_OK) {
                 stn_log_write(
@@ -1144,25 +1228,6 @@ stn_miner_status stn_miner_run(
                 );
 
                 break;
-            }
-
-            /*
-             * Socket readability only proves transport data is available.
-             * Confirm a complete, valid JOB before recording the previous
-             * work item as Replaced.  EOF or malformed inbound data must not
-             * be reported as legitimate replacement work.
-             */
-            if (replacement_pending) {
-                stn_log_write(
-                    "RX JOB_REPLACEMENT_CONFIRMED"
-                );
-
-                stn_display_set_result(
-                    &display,
-                    "Replaced"
-                );
-
-                replacement_pending = 0;
             }
 
             stn_display_set_job(
@@ -1254,11 +1319,70 @@ stn_miner_status stn_miner_run(
                 }
 
                 if (readable) {
+                    stn_miner_job incoming_job;
+                    int same_work;
+
                     stn_log_write(
                         "RX JOB_PENDING while_mining=1"
                     );
 
-                    replacement_pending = 1;
+                    status =
+                        stn_miner_receive_pending_job(
+                            &socket,
+                            &job,
+                            &incoming_job,
+                            &same_work
+                        );
+
+                    if (status != STN_MINER_OK) {
+                        stn_display_set_status(
+                            &display,
+                            "Reconnecting"
+                        );
+
+                        stn_display_set_result(
+                            &display,
+                            "Job receive failed"
+                        );
+
+                        stn_display_render(
+                            &display
+                        );
+
+                        stn_miner_job_clear(
+                            &incoming_job
+                        );
+
+                        stn_miner_job_clear(
+                            &job
+                        );
+
+                        goto reconnect;
+                    }
+
+                    if (same_work) {
+                        stn_miner_job_clear(
+                            &incoming_job
+                        );
+
+                        continue;
+                    }
+
+                    stn_display_set_result(
+                        &display,
+                        "Replaced"
+                    );
+
+                    pending_job =
+                        incoming_job;
+
+                    memset(
+                        &incoming_job,
+                        0,
+                        sizeof(incoming_job)
+                    );
+
+                    have_pending_job = 1;
 
                     stn_display_set_status(
                         &display,
@@ -1417,23 +1541,80 @@ stn_miner_status stn_miner_run(
                     }
 
                     if (readable) {
+                        stn_miner_job incoming_job;
+                        int same_work;
+
                         stn_log_write(
                             "RX JOB_PENDING after_chunk=1"
                         );
 
-                        replacement_pending = 1;
+                        status =
+                            stn_miner_receive_pending_job(
+                                &socket,
+                                &job,
+                                &incoming_job,
+                                &same_work
+                            );
 
-                        stn_display_set_status(
-                            &display,
-                            "Waiting for job"
-                        );
+                        if (status != STN_MINER_OK) {
+                            stn_display_set_status(
+                                &display,
+                                "Reconnecting"
+                            );
 
-                        stn_display_render(
-                            &display
-                        );
+                            stn_display_set_result(
+                                &display,
+                                "Job receive failed"
+                            );
 
-                        replaced = 1;
-                        break;
+                            stn_display_render(
+                                &display
+                            );
+
+                            stn_miner_job_clear(
+                                &incoming_job
+                            );
+
+                            stn_miner_job_clear(
+                                &job
+                            );
+
+                            goto reconnect;
+                        }
+
+                        if (same_work) {
+                            stn_miner_job_clear(
+                                &incoming_job
+                            );
+                        } else {
+                            stn_display_set_result(
+                                &display,
+                                "Replaced"
+                            );
+
+                            pending_job =
+                                incoming_job;
+
+                            memset(
+                                &incoming_job,
+                                0,
+                                sizeof(incoming_job)
+                            );
+
+                            have_pending_job = 1;
+
+                            stn_display_set_status(
+                                &display,
+                                "Waiting for job"
+                            );
+
+                            stn_display_render(
+                                &display
+                            );
+
+                            replaced = 1;
+                            break;
+                        }
                     }
 
                     if (chunk_end ==
@@ -1579,23 +1760,80 @@ stn_miner_status stn_miner_run(
                 }
 
                 if (readable) {
+                    stn_miner_job incoming_job;
+                    int same_work;
+
                     stn_log_write(
                         "RX JOB_PENDING before_submit=1"
                     );
 
-                    replacement_pending = 1;
+                    status =
+                        stn_miner_receive_pending_job(
+                            &socket,
+                            &job,
+                            &incoming_job,
+                            &same_work
+                        );
 
-                    stn_display_set_status(
-                        &display,
-                        "Waiting for job"
-                    );
+                    if (status != STN_MINER_OK) {
+                        stn_display_set_status(
+                            &display,
+                            "Reconnecting"
+                        );
 
-                    stn_display_render(
-                        &display
-                    );
+                        stn_display_set_result(
+                            &display,
+                            "Job receive failed"
+                        );
 
-                    replaced = 1;
-                    break;
+                        stn_display_render(
+                            &display
+                        );
+
+                        stn_miner_job_clear(
+                            &incoming_job
+                        );
+
+                        stn_miner_job_clear(
+                            &job
+                        );
+
+                        goto reconnect;
+                    }
+
+                    if (same_work) {
+                        stn_miner_job_clear(
+                            &incoming_job
+                        );
+                    } else {
+                        stn_display_set_result(
+                            &display,
+                            "Replaced"
+                        );
+
+                        pending_job =
+                            incoming_job;
+
+                        memset(
+                            &incoming_job,
+                            0,
+                            sizeof(incoming_job)
+                        );
+
+                        have_pending_job = 1;
+
+                        stn_display_set_status(
+                            &display,
+                            "Waiting for job"
+                        );
+
+                        stn_display_render(
+                            &display
+                        );
+
+                        replaced = 1;
+                        break;
+                    }
                 }
 
                 status =
