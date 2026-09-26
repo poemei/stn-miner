@@ -149,6 +149,33 @@ static void stn_display_push_job(
     state->jobs[0].nonce = 0u;
 }
 
+static void stn_display_drop_current_job(
+    stn_display_state *state
+)
+{
+    size_t i;
+
+    if (state == NULL ||
+        state->job_count == 0u) {
+        return;
+    }
+
+    for (i = 0u;
+         i + 1u < state->job_count;
+         ++i) {
+        state->jobs[i] =
+            state->jobs[i + 1u];
+    }
+
+    --state->job_count;
+
+    memset(
+        &state->jobs[state->job_count],
+        0,
+        sizeof(state->jobs[state->job_count])
+    );
+}
+
 void stn_display_init(
     stn_display_state *state,
     const stn_miner_config *config,
@@ -207,6 +234,7 @@ void stn_display_init(
 
     state->nonce = 0u;
     state->hashes_completed = 0u;
+    state->current_job_hashes = 0u;
     state->total_shares = 0u;
     state->job_count = 0u;
 }
@@ -285,8 +313,11 @@ void stn_display_set_job(
         work_id
     );
 
-    state->nonce = 0u;
-    state->hashes_completed = 0u;
+    /*
+     * Job-local progress restarts with new work, but the operator-facing
+     * Hashes and Nonce counters remain useful across normal job turnover.
+     */
+    state->current_job_hashes = 0u;
 
     stn_display_push_job(
         state,
@@ -308,8 +339,7 @@ void stn_display_clear_job(
         "-"
     );
 
-    state->nonce = 0u;
-    state->hashes_completed = 0u;
+    state->current_job_hashes = 0u;
 }
 
 void stn_display_set_nonce(
@@ -321,7 +351,14 @@ void stn_display_set_nonce(
         return;
     }
 
-    state->nonce = nonce;
+    /*
+     * A replacement job commonly starts at nonce zero. Keep the last
+     * actually observed non-zero nonce visible until the new job advances.
+     */
+    if (nonce != 0u ||
+        state->nonce == 0u) {
+        state->nonce = nonce;
+    }
 
     if (state->job_count > 0u) {
         state->jobs[0].nonce = nonce;
@@ -333,12 +370,38 @@ void stn_display_set_hashes(
     uint64_t hashes_completed
 )
 {
+    uint64_t delta;
+
     if (state == NULL) {
         return;
     }
 
-    state->hashes_completed =
+    if (hashes_completed >=
+        state->current_job_hashes) {
+        delta =
+            hashes_completed -
+            state->current_job_hashes;
+    } else {
+        /*
+         * Defensive handling for a job-local counter reset. A new job
+         * normally resets current_job_hashes through stn_display_set_job().
+         */
+        delta =
+            hashes_completed;
+    }
+
+    state->current_job_hashes =
         hashes_completed;
+
+    if (UINT64_MAX -
+        state->hashes_completed <
+        delta) {
+        state->hashes_completed =
+            UINT64_MAX;
+    } else {
+        state->hashes_completed +=
+            delta;
+    }
 }
 
 void stn_display_set_result(
@@ -362,6 +425,20 @@ void stn_display_set_result(
     }
 
     if (state->job_count == 0u) {
+        return;
+    }
+
+    /*
+     * Normal canonical work turnover is not a mining result. Do not flood
+     * Last 5 Jobs with Replaced entries; discard the superseded active row
+     * and let the next canonical job become the active row.
+     */
+    if (strcmp(result, "Replaced") == 0) {
+        stn_display_drop_current_job(
+            state
+        );
+
+        state->current_job_hashes = 0u;
         return;
     }
 
