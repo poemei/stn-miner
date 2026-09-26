@@ -32,6 +32,7 @@ typedef struct stn_display_state {
 
     uint64_t nonce;
     uint64_t hashes_completed;
+    uint64_t current_job_hashes;
     uint64_t total_shares;
 
     stn_display_job_entry jobs[STN_DISPLAY_HISTORY_COUNT];
