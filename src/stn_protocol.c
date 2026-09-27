@@ -306,6 +306,19 @@ stn_protocol_status stn_protocol_parse_result(
         return STN_PROTOCOL_INVALID_RESULT;
     }
 
+    /*
+     * PROVIDER is a submission-side service failure, not evidence that the
+     * current Work ID became stale.  The mining loop already advances and
+     * continues after a non-consuming rejected submission.  Normalize the
+     * transient provider result to that same non-consuming behavior so a
+     * reachable Stratum/Chain service failure cannot park valid mining work.
+     * STALE remains the protocol result that retires the current job.
+     */
+    if (code == (uint32_t) STN_MINER_RESULT_PROVIDER) {
+        *result = STN_MINER_RESULT_REJECTED;
+        return STN_PROTOCOL_OK;
+    }
+
     *result = (stn_miner_result_code) code;
 
     return STN_PROTOCOL_OK;
