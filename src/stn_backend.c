@@ -42,8 +42,7 @@ stn_backend_status stn_backend_select(
     return STN_BACKEND_OK;
 }
 
-stn_backend_status stn_backend_search(
-    const stn_backend *backend,
+static stn_backend_status stn_backend_search_cpu(
     const stn_miner_job *job,
     uint64_t nonce_start,
     uint64_t nonce_end,
@@ -51,6 +50,36 @@ stn_backend_status stn_backend_search(
 )
 {
     stn_cpu_status cpu_status;
+
+    cpu_status =
+        stn_cpu_search(
+            job,
+            nonce_start,
+            nonce_end,
+            solution
+        );
+
+    if (cpu_status ==
+        STN_CPU_OK) {
+        return STN_BACKEND_OK;
+    }
+
+    if (cpu_status ==
+        STN_CPU_NO_SOLUTION) {
+        return STN_BACKEND_NO_SOLUTION;
+    }
+
+    return STN_BACKEND_ERROR;
+}
+
+stn_backend_status stn_backend_search(
+    stn_backend *backend,
+    const stn_miner_job *job,
+    uint64_t nonce_start,
+    uint64_t nonce_end,
+    stn_miner_solution *solution
+)
+{
     stn_gpu_backend_status gpu_status;
 
     if (backend == NULL ||
@@ -61,25 +90,12 @@ stn_backend_status stn_backend_search(
 
     switch (backend->type) {
         case STN_BACKEND_TYPE_CPU:
-            cpu_status =
-                stn_cpu_search(
-                    job,
-                    nonce_start,
-                    nonce_end,
-                    solution
-                );
-
-            if (cpu_status ==
-                STN_CPU_OK) {
-                return STN_BACKEND_OK;
-            }
-
-            if (cpu_status ==
-                STN_CPU_NO_SOLUTION) {
-                return STN_BACKEND_NO_SOLUTION;
-            }
-
-            return STN_BACKEND_ERROR;
+            return stn_backend_search_cpu(
+                job,
+                nonce_start,
+                nonce_end,
+                solution
+            );
 
         case STN_BACKEND_TYPE_GPU:
             gpu_status =
@@ -101,16 +117,31 @@ stn_backend_status stn_backend_search(
             }
 
             if (gpu_status ==
-                STN_GPU_BACKEND_UNAVAILABLE) {
-                return STN_BACKEND_UNAVAILABLE;
-            }
-
-            if (gpu_status ==
                 STN_GPU_BACKEND_INVALID_ARGUMENT) {
                 return STN_BACKEND_INVALID_ARGUMENT;
             }
 
-            return STN_BACKEND_ERROR;
+            /*
+             * [AI-MODIFIED] 2026-09-27
+             * A runtime GPU/provider failure must not strand otherwise valid
+             * mining work. Demote the active backend to CPU and search the
+             * exact same nonce interval. Subsequent chunks remain on CPU,
+             * preserving canonical work and nonce progression without
+             * repeatedly invoking a failed provider.
+             * [HUMAN-REVIEW-REQUIRED]
+             */
+            backend->type =
+                STN_BACKEND_TYPE_CPU;
+
+            backend->name =
+                "CPU";
+
+            return stn_backend_search_cpu(
+                job,
+                nonce_start,
+                nonce_end,
+                solution
+            );
 
         case STN_BACKEND_TYPE_USB_ASIC:
         case STN_BACKEND_TYPE_ASIC:
