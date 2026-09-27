@@ -33,8 +33,14 @@ stn_backend_status stn_backend_select(
     const stn_compute_inventory *compute_inventory
 );
 
+/*
+ * [AI-MODIFIED] 2026-09-27
+ * Search may demote an unavailable accelerated backend to the deterministic
+ * CPU backend so valid work can continue without terminating the miner.
+ * [HUMAN-REVIEW-REQUIRED]
+ */
 stn_backend_status stn_backend_search(
-    const stn_backend *backend,
+    stn_backend *backend,
     const stn_miner_job *job,
     uint64_t nonce_start,
     uint64_t nonce_end,
